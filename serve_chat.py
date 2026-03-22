@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,6 +58,31 @@ def port_is_available(port: int) -> bool:
         return True
     except OSError:
         return False
+
+
+def wait_for_server_ready(port: int, timeout_seconds: float = 15.0, poll_interval: float = 0.2) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(poll_interval)
+    return False
+
+
+def open_browser_when_ready(port: int, timeout_seconds: float = 15.0) -> None:
+    url = f"http://127.0.0.1:{port}"
+
+    def _runner() -> None:
+        if not wait_for_server_ready(port, timeout_seconds=timeout_seconds):
+            return
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    threading.Thread(target=_runner, name="oam-browser-open", daemon=True).start()
 
 
 # ============================================================
@@ -451,20 +477,6 @@ def ensure_openclaw_registration() -> None:
     desired: List[Dict[str, str]] = []
     seen = set()
 
-    for brain in config.get("brains", []) or []:
-        if not isinstance(brain, dict):
-            continue
-        brain_key = str(brain.get("key", "")).strip()
-        if not brain_key or brain_key in seen:
-            continue
-        seen.add(brain_key)
-        desired.append(
-            {
-                "key": brain_key,
-                "name": str(brain.get("name", brain_key)).strip() or brain_key,
-            }
-        )
-
     for brain in load_saved_brains():
         brain_key = str(brain.get("key", "")).strip()
         if not brain_key or brain_key in seen:
@@ -605,7 +617,10 @@ async def info():
             key = "".join(c for c in key if c.isalnum() or c == "-").strip("-") or "assistant"
             brain_list.append({"key": key, "name": name, "role": b.get("role", ""), "personality": b.get("personality", "")})
     else:
-        brain_list = brains
+        brain_list = [
+            brain for brain in brains
+            if isinstance(brain, dict) and not _is_placeholder_brain(brain.get("key", ""), brain.get("name", ""))
+        ]
 
     return {
         "provider": models.get("primary", {}).get("provider", "unknown"),
@@ -805,6 +820,9 @@ async def chat(request: Request):
         if current_brain_index < len(brains_cfg) and isinstance(brains_cfg[current_brain_index], dict):
             planned_name = str(brains_cfg[current_brain_index].get("name", "") or "").strip()
             planned_key = str(brains_cfg[current_brain_index].get("key", "") or "").strip()
+            if _is_placeholder_brain(planned_key, planned_name):
+                planned_name = ""
+                planned_key = ""
         if brain_total > 1:
             brain_context = f"\n\nYou are configuring chatbot {brain_num} of {brain_total}. "
             if completed_brains:
@@ -877,6 +895,12 @@ def _brain_key_from_name(name: str) -> str:
     key = name.lower().replace(" ", "-").replace("_", "-")
     key = "".join(c for c in key if c.isalnum() or c == "-").strip("-")
     return key or "assistant"
+
+
+def _is_placeholder_brain(brain_key: str, brain_name: str) -> bool:
+    key = str(brain_key or "").strip().lower()
+    name = str(brain_name or "").strip().lower()
+    return key.startswith("brain-") and (not name or name.startswith("brain "))
 
 
 def _save_identity(identity: Dict[str, Any]):
@@ -1341,6 +1365,6 @@ if __name__ == "__main__":
     print(f"  Starting memory + chat server on http://127.0.0.1:{port}\n")
 
     if not args.no_browser:
-        threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+        open_browser_when_ready(port, timeout_seconds=15.0)
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

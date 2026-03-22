@@ -85,6 +85,47 @@ trim() {
   printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+wait_for_http_ready() {
+  local url="$1"
+  local tries="${2:-30}"
+  local delay="${3:-0.5}"
+  local count=0
+
+  if ! command -v curl >/dev/null 2>&1; then
+    return 1
+  fi
+
+  while [ "$count" -lt "$tries" ]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+    count=$((count + 1))
+  done
+  return 1
+}
+
+open_browser_url() {
+  local url="$1"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 &
+    return 0
+  fi
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 &
+    return 0
+  fi
+  if command -v cmd.exe >/dev/null 2>&1; then
+    cmd.exe /c start "" "$url" >/dev/null 2>&1
+    return 0
+  fi
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Start-Process '$url'" >/dev/null 2>&1
+    return 0
+  fi
+  return 1
+}
+
 yaml_quote() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -681,25 +722,6 @@ apply_openclaw_memorysearch_config() {
   fi
 }
 
-register_openclaw_brains() {
-  local install_path="$1"
-  local i=0
-
-  [ "$FRAMEWORK" = "openclaw" ] || return
-
-  if ! command -v openclaw >/dev/null 2>&1; then
-    warn "Skipping OpenClaw agent registration because the CLI is not installed."
-    return
-  fi
-
-  step "Registering OpenClaw agents..."
-  while [ "$i" -lt "${#BRAIN_KEYS[@]}" ]; do
-    .venv/bin/python openclaw_setup.py register "${BRAIN_KEYS[$i]}" "${BRAIN_NAMES[$i]}" "$FAST_MODEL" "$install_path" >/dev/null
-    success "Registered OpenClaw agents for ${BRAIN_NAMES[$i]} (${BRAIN_KEYS[$i]})."
-    i=$((i + 1))
-  done
-}
-
 header
 
 if [ ! -f "config.example.yaml" ]; then
@@ -988,7 +1010,7 @@ divider
 echo
 echo -e "${WHITE}${BOLD}  Step 7: Chatbots${NC}"
 echo
-echo -e "  ${DIM}Each chatbot gets isolated memory, vault folders, and OpenClaw recall/observer agents.${NC}"
+echo -e "  ${DIM}Each chatbot gets isolated memory and vault folders. You will name them in the browser chat.${NC}"
 echo
 read -r -p "  Number of chatbots [1]: " NUM_BRAINS
 NUM_BRAINS="${NUM_BRAINS:-1}"
@@ -999,19 +1021,14 @@ fi
 
 i=1
 while [ "$i" -le "$NUM_BRAINS" ]; do
-  default_name="Assistant"
-  if [ "$NUM_BRAINS" -gt 1 ]; then
-    default_name="Assistant $i"
-  fi
-  read -r -p "  Chatbot $i name [$default_name]: " brain_name
-  brain_name="$(trim "$brain_name")"
-  brain_name="${brain_name:-$default_name}"
-  brain_key="$(unique_brain_key "$(slugify "$brain_name")")"
+  brain_key="brain-$i"
+  brain_name="Brain $i"
   BRAIN_NAMES+=("$brain_name")
   BRAIN_KEYS+=("$brain_key")
-  success "Chatbot $i -> ${brain_name} (${brain_key})"
   i=$((i + 1))
 done
+
+success "$NUM_BRAINS chatbot(s). Final names will be set in the browser setup chat."
 
 divider
 echo
@@ -1126,8 +1143,6 @@ step "Initializing memory runtime..."
 .venv/bin/python serve_chat.py --init-only >/dev/null
 success "Memory database, vector store, and API runtime initialized."
 
-register_openclaw_brains "$(pwd)"
-
 divider
 echo
 echo -e "${GREEN}${BOLD}  Setup complete.${NC}"
@@ -1142,7 +1157,7 @@ echo -e "    Chatbots:   ${CYAN}$NUM_BRAINS${NC}"
 echo
 info "config.yaml, data/memory.db, data/vector/, and per-brain vault folders are ready."
 if [ "$FRAMEWORK" = "openclaw" ]; then
-  info "OpenClaw plugins and per-brain recall/observer agents are registered."
+  info "OpenClaw memorySearch is configured. Per-brain agents will be registered automatically as each chatbot identity is saved in the browser."
 fi
 
 divider
@@ -1158,7 +1173,44 @@ CHAT_CHOICE="${CHAT_CHOICE:-1}"
 if [ "$CHAT_CHOICE" = "1" ]; then
   echo
   info "Starting the memory API and opening the browser UI. Keep this terminal running while you use it."
-  .venv/bin/python serve_chat.py
+  SERVER_URL="http://127.0.0.1:8400"
+  .venv/bin/python serve_chat.py --no-browser &
+  SERVER_PID=$!
+
+  cleanup_server() {
+    if [ -n "${SERVER_PID:-}" ] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      kill "$SERVER_PID" >/dev/null 2>&1 || true
+    fi
+  }
+
+  trap cleanup_server INT TERM
+
+  READY=0
+  TRIES=0
+  while [ "$TRIES" -lt 30 ]; do
+    if curl -fsS "${SERVER_URL}/api/info" >/dev/null 2>&1; then
+      READY=1
+      break
+    fi
+    if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+    TRIES=$((TRIES + 1))
+  done
+
+  if [ "$READY" = "1" ]; then
+    if ! open_browser_url "$SERVER_URL"; then
+      warn "Could not open the browser automatically. Open ${SERVER_URL} manually."
+    fi
+  else
+    warn "Server took too long to start. Open ${SERVER_URL} manually."
+  fi
+
+  wait "$SERVER_PID"
+  SERVER_STATUS=$?
+  trap - INT TERM
+  exit "$SERVER_STATUS"
 else
   echo
   info "Start it later with:"

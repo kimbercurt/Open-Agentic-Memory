@@ -43,9 +43,9 @@ The setup wizard walks you through:
 4. **Fast Model** — for the 13 specialized agents (speed over depth)
 5. **Embedding Provider** — auto-detects what is available on your machine; OpenClaw defaults to built-in memory search
 6. **API Keys** — checks what is already set and shows what still needs to be exported
-7. **Chatbots** — names each chatbot up front so the generated brain keys and folders are final
+7. **Chatbots** — choose how many isolated chatbots you want; final names are set in the browser setup chat
 
-It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch` and registers the recall/observer agents automatically.
+It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
 
 ### Manual Setup
 
