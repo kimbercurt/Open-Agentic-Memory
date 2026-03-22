@@ -42,10 +42,10 @@ The setup wizard walks you through:
 3. **Primary Model** — your main chatbot LLM (shows provider-specific recommendations)
 4. **Fast Model** — for the 13 specialized agents (speed over depth)
 5. **Embedding Provider** — auto-detects what is available on your machine; OpenClaw defaults to built-in memory search
-6. **API Keys** — checks what is already set and shows what still needs to be exported
+6. **API Keys** — auto-detects env vars and OpenClaw auth, can save missing keys into `.env`, and OpenClaw prefers its local gateway for sub-agents
 7. **Chatbots** — choose how many isolated chatbots you want; final names are set in the browser setup chat
 
-It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
+It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`, records the local gateway settings, and prefers that gateway for both the main chat and the specialized agents; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
 
 ### Manual Setup
 
@@ -53,7 +53,7 @@ It generates `config.yaml`, creates all vault directories, installs the Python e
 git clone https://github.com/kimbercurt/Open-Agentic-Memory.git
 cd Open-Agentic-Memory
 cp config.example.yaml config.yaml
-# Edit config.yaml with your models and API keys
+# Edit config.yaml and/or add keys to .env
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python serve_chat.py --init-only
@@ -69,7 +69,7 @@ cd /path/to/Open-Agentic-Memory
 bash setup.sh
 ```
 
-No internet required after cloning. The setup runs entirely locally.
+The setup runs locally. If you choose remote providers like Anthropic, OpenAI, Gemini, or OpenRouter, those model calls still need network access at runtime.
 
 ## The 15 Agents
 

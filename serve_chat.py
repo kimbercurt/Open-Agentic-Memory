@@ -42,8 +42,10 @@ except ImportError:
     from fastapi.responses import HTMLResponse, JSONResponse
     import uvicorn
 
-from agentic_memory.config import load_config as load_runtime_config
+from agentic_memory.config import load_config as load_runtime_config, load_env_file
 from agentic_memory.runtime import MemoryRuntime
+
+load_env_file(ROOT_DIR / ".env")
 
 
 # ============================================================
@@ -103,6 +105,23 @@ def load_config() -> Dict[str, Any]:
 
 def _load_openclaw_gateway_config() -> Optional[Dict[str, Any]]:
     """Load OpenClaw gateway config if available."""
+    runtime_cfg = globals().get("runtime_config")
+    if runtime_cfg is None:
+        runtime_cfg = load_runtime_config(str(ROOT_DIR / "config.yaml"))
+
+    gateway_cfg = getattr(runtime_cfg, "gateway", None)
+    if gateway_cfg is not None:
+        base_url = str(getattr(gateway_cfg, "base_url", "") or "").strip().rstrip("/")
+        port = int(getattr(gateway_cfg, "port", 0) or 0)
+        if not base_url and port:
+            base_url = f"http://127.0.0.1:{port}"
+        if base_url:
+            token_env = str(getattr(gateway_cfg, "token_env", "") or "").strip()
+            token = str(getattr(gateway_cfg, "token", "") or "").strip()
+            if not token and token_env:
+                token = str(os.environ.get(token_env, "") or "").strip()
+            return {"port": port, "base_url": base_url, "token": token}
+
     openclaw_path = Path.home() / ".openclaw" / "openclaw.json"
     if not openclaw_path.exists():
         return None
@@ -114,7 +133,7 @@ def _load_openclaw_gateway_config() -> Optional[Dict[str, Any]]:
         token = gw.get("auth", {}).get("token", "")
         http_endpoints = gw.get("http", {}).get("endpoints", {})
         if port and http_endpoints.get("chatCompletions", {}).get("enabled"):
-            return {"port": port, "token": token}
+            return {"port": port, "base_url": f"http://127.0.0.1:{port}", "token": token}
     except Exception:
         pass
     return None
@@ -123,9 +142,12 @@ def _load_openclaw_gateway_config() -> Optional[Dict[str, Any]]:
 def _call_openclaw_gateway(messages: List[Dict], model: str, gateway: Dict[str, Any], thinking: str = "") -> str:
     """Route through the OpenClaw gateway which handles all auth."""
     import urllib.request
-    port = gateway["port"]
+    port = gateway.get("port")
     token = gateway["token"]
-    url = f"http://127.0.0.1:{port}/v1/chat/completions"
+    base_url = str(gateway.get("base_url") or "").rstrip("/")
+    if not base_url and port:
+        base_url = f"http://127.0.0.1:{port}"
+    url = f"{base_url}/v1/chat/completions"
     payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
     if thinking:
         payload["thinking"] = thinking
@@ -197,7 +219,7 @@ def call_model(messages: List[Dict[str, str]], config: Dict[str, Any], thinking:
     provider = primary.get("provider", "openai")
     model = primary.get("model", "gpt-5.4")
     api_key_env = primary.get("api_key_env", "OPENAI_API_KEY")
-    api_key = os.environ.get(api_key_env, "")
+    api_key = str(primary.get("api_key") or os.environ.get(api_key_env, "") or "").strip()
     base_url = primary.get("base_url", "")
 
     # If using OpenClaw, prefer the local gateway so the selected model is honored.
@@ -232,7 +254,7 @@ def call_model(messages: List[Dict[str, str]], config: Dict[str, Any], thinking:
             "https://api.openai.com/v1" if provider == "openai" else "https://openrouter.ai/api/v1"
         ))
     elif provider == "anthropic":
-        return _call_anthropic(messages, model, api_key)
+        return _call_anthropic(messages, model, api_key, base_url)
     elif provider == "ollama":
         return _call_ollama(messages, model, base_url or "http://localhost:11434")
     else:
@@ -253,7 +275,7 @@ def _call_openai_compatible(messages: List[Dict], model: str, api_key: str, base
         return f"Error calling model: {e}"
 
 
-def _call_anthropic(messages: List[Dict], model: str, api_key: str) -> str:
+def _call_anthropic(messages: List[Dict], model: str, api_key: str, base_url: str = "") -> str:
     import urllib.request
     system_msg = ""
     chat_msgs = []
@@ -264,7 +286,8 @@ def _call_anthropic(messages: List[Dict], model: str, api_key: str) -> str:
             chat_msgs.append(m)
     body = json.dumps({"model": model, "max_tokens": 2000, "system": system_msg, "messages": chat_msgs}).encode()
     headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
-    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers=headers, method="POST")
+    endpoint = (base_url or "https://api.anthropic.com").rstrip("/")
+    req = urllib.request.Request(f"{endpoint}/v1/messages", data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
@@ -455,9 +478,11 @@ def sync_openclaw_workspace_memory(brain_key: str) -> None:
 
 
 def reload_runtime_configuration() -> None:
-    global config, runtime_config
+    global config, runtime_config, _openclaw_gateway, _openclaw_gateway_checked
     config = load_config()
     runtime_config = load_runtime_config(str(ROOT_DIR / "config.yaml"))
+    _openclaw_gateway = None
+    _openclaw_gateway_checked = False
     if memory_runtime is not None:
         memory_runtime.config.brains = runtime_config.brains
         memory_runtime.config.framework = runtime_config.framework

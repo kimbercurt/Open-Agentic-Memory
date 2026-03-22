@@ -14,6 +14,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import warnings
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ PROMPT_DIR = Path(__file__).resolve().parents[2] / "agents"
 DEFAULT_COLLECTION = "oam_memories"
 OPENCLAW_STATE_DIR = Path.home() / ".openclaw"
 OPENCLAW_CONFIG_PATH = OPENCLAW_STATE_DIR / "openclaw.json"
+OPENCLAW_MAIN_AUTH_PROFILES_PATH = OPENCLAW_STATE_DIR / "agents" / "main" / "agent" / "auth-profiles.json"
 OPENCLAW_WORKSPACES_DIR = OPENCLAW_STATE_DIR / "workspaces"
 
 
@@ -147,27 +149,276 @@ def _urlopen_json(url: str, body: Optional[Dict[str, Any]] = None, headers: Opti
     return parsed if isinstance(parsed, dict) else {}
 
 
-def call_model_text(model_cfg: ModelConfig, messages: List[Dict[str, str]], thinking: str = "") -> str:
-    provider = str(model_cfg.provider or "openai").strip().lower()
+def _normalize_provider(provider: str) -> str:
+    clean = str(provider or "").strip().lower()
+    if clean == "google":
+        return "gemini"
+    return clean or "openai"
+
+
+def _provider_api_key_env(provider: str) -> str:
+    normalized = _normalize_provider(provider)
+    mapping = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "voyage": "VOYAGE_API_KEY",
+        "xai": "XAI_API_KEY",
+        "openai-compatible": "OPENAI_API_KEY",
+        "custom": "OPENAI_API_KEY",
+    }
+    env_name = mapping.get(normalized, "")
+    if not env_name:
+        warnings.warn(f"Unknown provider '{provider}' has no default API key environment mapping.")
+        return "API_KEY"
+    return env_name
+
+
+def _provider_api_key_env_candidates(provider: str, api_key_env: str = "") -> List[str]:
+    names: List[str] = []
+    explicit = str(api_key_env or "").strip()
+    if explicit:
+        names.append(explicit)
+
+    default_env = _provider_api_key_env(provider)
+    if default_env and default_env not in names:
+        names.append(default_env)
+
+    if _normalize_provider(provider) == "gemini":
+        for extra in ("GOOGLE_API_KEY",):
+            if extra not in names:
+                names.append(extra)
+
+    return names
+
+
+def _openclaw_provider_aliases(provider: str) -> List[str]:
+    normalized = _normalize_provider(provider)
+    aliases = {
+        "anthropic": ["anthropic"],
+        "openai": ["openai"],
+        "openrouter": ["openrouter"],
+        "gemini": ["gemini", "google"],
+        "mistral": ["mistral"],
+        "voyage": ["voyage"],
+        "xai": ["xai"],
+    }
+    return aliases.get(normalized, [normalized] if normalized else [])
+
+
+def _load_json_file(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _load_openclaw_config_json() -> Dict[str, Any]:
+    return _load_json_file(OPENCLAW_CONFIG_PATH)
+
+
+def _find_openclaw_auth_profiles_path() -> Optional[Path]:
+    if OPENCLAW_MAIN_AUTH_PROFILES_PATH.exists():
+        return OPENCLAW_MAIN_AUTH_PROFILES_PATH
+
+    agents_root = OPENCLAW_STATE_DIR / "agents"
+    if not agents_root.exists():
+        return None
+    for path in agents_root.glob("*/agent/auth-profiles.json"):
+        if path.exists():
+            return path
+    return None
+
+
+def _load_openclaw_auth_profiles() -> Dict[str, Any]:
+    path = _find_openclaw_auth_profiles_path()
+    if path is None:
+        return {}
+    return _load_json_file(path)
+
+
+def _resolve_openclaw_env_value(env_name: str) -> Tuple[str, str]:
+    clean_name = str(env_name or "").strip()
+    if not clean_name:
+        return "", ""
+    cfg = _load_openclaw_config_json()
+    env_block = cfg.get("env", {}) if isinstance(cfg.get("env"), dict) else {}
+    value = str(env_block.get(clean_name, "") or "").strip()
+    if value:
+        return value, f"openclaw.env:{clean_name}"
+    return "", ""
+
+
+def _extract_openclaw_profile_secret(profile: Dict[str, Any]) -> str:
+    for field in ("token", "apiKey", "access", "password"):
+        value = str(profile.get(field, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _resolve_openclaw_profile_api_key(provider: str) -> Tuple[str, str]:
+    aliases = set(_openclaw_provider_aliases(provider))
+    if not aliases:
+        return "", ""
+
+    auth_payload = _load_openclaw_auth_profiles()
+    profiles = auth_payload.get("profiles", {}) if isinstance(auth_payload.get("profiles"), dict) else {}
+    if not profiles:
+        return "", ""
+
+    for profile_name, profile in profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        profile_provider = _normalize_provider(profile.get("provider", ""))
+        if profile_provider not in aliases:
+            continue
+        secret = _extract_openclaw_profile_secret(profile)
+        if secret:
+            return secret, f"openclaw.auth:{profile_name}"
+    return "", ""
+
+
+def _resolve_configured_api_key(explicit_key: str, api_key_env: str, provider: str) -> Tuple[str, str]:
+    clean_key = str(explicit_key or "").strip()
+    if clean_key:
+        return clean_key, "config.api_key"
+
+    for env_name in _provider_api_key_env_candidates(provider, api_key_env):
+        env_value = str(os.environ.get(env_name, "") or "").strip()
+        if env_value:
+            return env_value, f"env:{env_name}"
+
+        openclaw_env_value, openclaw_env_source = _resolve_openclaw_env_value(env_name)
+        if openclaw_env_value:
+            return openclaw_env_value, openclaw_env_source
+
+    profile_value, profile_source = _resolve_openclaw_profile_api_key(provider)
+    if profile_value:
+        return profile_value, profile_source
+
+    return "", ""
+
+
+def _resolve_gateway_config(app_config: Optional[Config] = None) -> Optional[Dict[str, str]]:
+    if app_config is not None and getattr(app_config, "gateway", None) is not None:
+        gateway_cfg = app_config.gateway
+        if not bool(getattr(gateway_cfg, "enabled", False)):
+            return None
+        base_url = str(gateway_cfg.base_url or "").strip().rstrip("/")
+        port = int(getattr(gateway_cfg, "port", 0) or 0)
+        if not base_url and port > 0:
+            base_url = f"http://127.0.0.1:{port}"
+        token = str(gateway_cfg.token or "").strip()
+        token_env = str(gateway_cfg.token_env or "").strip()
+        if not token and token_env:
+            token = str(os.environ.get(token_env, "") or "").strip()
+        if base_url:
+            return {"base_url": base_url, "token": token}
+
+    cfg = _load_openclaw_config_json()
+    gateway = cfg.get("gateway", {}) if isinstance(cfg.get("gateway"), dict) else {}
+    auth = gateway.get("auth", {}) if isinstance(gateway.get("auth"), dict) else {}
+    http_endpoints = gateway.get("http", {}).get("endpoints", {}) if isinstance(gateway.get("http"), dict) else {}
+    port = gateway.get("port") or 0
+    if not port or not http_endpoints.get("chatCompletions", {}).get("enabled"):
+        return None
+
+    token = (
+        os.environ.get("OPENCLAW_GATEWAY_TOKEN")
+        or os.environ.get("OPENCLAW_GATEWAY_PASSWORD")
+        or str(auth.get("token", "") or "")
+        or str(auth.get("password", "") or "")
+    ).strip()
+    return {
+        "base_url": f"http://127.0.0.1:{port}",
+        "token": token,
+    }
+
+
+def _call_openclaw_gateway_model(messages: List[Dict[str, str]], model: str, gateway: Dict[str, str], thinking: str = "") -> str:
+    base_url = str(gateway.get("base_url", "") or "").rstrip("/")
+    token = str(gateway.get("token", "") or "").strip()
+    payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
+    if thinking:
+        payload["thinking"] = thinking
+        payload["reasoning_effort"] = thinking
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    data = _urlopen_json(
+        f"{base_url}/v1/chat/completions",
+        body=payload,
+        headers=headers,
+        timeout=90,
+    )
+    return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+
+
+def call_model_text(
+    model_cfg: ModelConfig,
+    messages: List[Dict[str, str]],
+    thinking: str = "",
+    app_config: Optional[Config] = None,
+) -> str:
+    provider = _normalize_provider(model_cfg.provider or "openai")
     model = str(model_cfg.model or "gpt-5.4").strip()
-    api_key = model_cfg.api_key
     base_url = str(model_cfg.base_url or "").strip()
+    gateway = _resolve_gateway_config(app_config)
+    gateway_preferred = bool(
+        gateway
+        and (
+            (app_config is not None and app_config.framework == "openclaw")
+            or (app_config is not None and getattr(app_config, "gateway", None) is not None and app_config.gateway.prefer_for_models)
+        )
+    )
+
+    if gateway_preferred:
+        try:
+            gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+            if gateway_reply:
+                return gateway_reply
+        except Exception:
+            pass
+
+    api_key, api_source = _resolve_configured_api_key(model_cfg.api_key, model_cfg.api_key_env, provider)
 
     try:
-        if provider in ("openai", "openrouter"):
-            endpoint = base_url or ("https://api.openai.com/v1" if provider == "openai" else "https://openrouter.ai/api/v1")
+        if provider in ("openai", "openrouter", "mistral", "openai-compatible", "custom"):
+            endpoint = base_url or (
+                "https://api.openai.com/v1" if provider == "openai"
+                else "https://openrouter.ai/api/v1" if provider == "openrouter"
+                else "https://api.mistral.ai/v1" if provider == "mistral"
+                else "https://api.openai.com/v1"
+            )
+            if not api_key and gateway and not gateway_preferred:
+                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+                if gateway_reply:
+                    return gateway_reply
+            if not api_key:
+                return f"Error calling model: missing API key for provider {provider}."
             payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
             if thinking:
                 payload["reasoning_effort"] = thinking
             data = _urlopen_json(
                 f"{endpoint.rstrip('/')}/chat/completions",
                 body=payload,
-                headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=90,
             )
             return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
 
         if provider == "anthropic":
+            if not api_key and gateway and not gateway_preferred:
+                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+                if gateway_reply:
+                    return gateway_reply
+            if not api_key:
+                return "Error calling model: missing API key for provider anthropic."
+            endpoint = (base_url or "https://api.anthropic.com").rstrip("/")
             system_text = ""
             chat_messages: List[Dict[str, str]] = []
             for message in messages:
@@ -185,12 +436,12 @@ def call_model_text(model_cfg: ModelConfig, messages: List[Dict[str, str]], thin
                 "messages": chat_messages,
             }
             data = _urlopen_json(
-                "https://api.anthropic.com/v1/messages",
+                f"{endpoint}/v1/messages",
                 body=payload,
                 headers={
                     "x-api-key": api_key,
                     "anthropic-version": "2023-06-01",
-                } if api_key else {"anthropic-version": "2023-06-01"},
+                },
                 timeout=90,
             )
             chunks = data.get("content", [])
@@ -207,15 +458,22 @@ def call_model_text(model_cfg: ModelConfig, messages: List[Dict[str, str]], thin
             )
             return str(data.get("message", {}).get("content", "") or "")
 
-        endpoint = base_url or "https://api.openai.com/v1"
-        data = _urlopen_json(
-            f"{endpoint.rstrip('/')}/chat/completions",
-            body={"model": model, "messages": messages, "max_tokens": 2000},
-            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
-            timeout=90,
-        )
-        return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+        if gateway and not gateway_preferred:
+            gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+            if gateway_reply:
+                return gateway_reply
+
+        return f"Error calling model: unsupported provider '{provider}'."
     except Exception as exc:  # pragma: no cover - network dependent
+        if gateway and not gateway_preferred:
+            try:
+                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+                if gateway_reply:
+                    return gateway_reply
+            except Exception:
+                pass
+        if api_source:
+            return f"Error calling model: {exc} (auth source: {api_source})"
         return f"Error calling model: {exc}"
 
 
@@ -237,6 +495,18 @@ class OpenClawMemoryBridge:
             return {}
 
     def _gateway_settings(self) -> Tuple[Optional[str], Optional[str]]:
+        if getattr(self.config, "gateway", None) is not None:
+            gateway_cfg = self.config.gateway
+            if not bool(getattr(gateway_cfg, "enabled", False)):
+                return None, None
+            port = int(getattr(gateway_cfg, "port", 0) or 0)
+            token = str(getattr(gateway_cfg, "token", "") or "").strip()
+            token_env = str(getattr(gateway_cfg, "token_env", "") or "").strip()
+            if not token and token_env:
+                token = str(os.environ.get(token_env, "") or "").strip()
+            if port:
+                return str(port), token or None
+
         cfg = self._load_openclaw_config()
         gateway = cfg.get("gateway", {}) if isinstance(cfg.get("gateway"), dict) else {}
         auth = gateway.get("auth", {}) if isinstance(gateway.get("auth"), dict) else {}
@@ -463,7 +733,7 @@ class EmbeddingService:
             return [0.0] * dimensions
 
         try:
-            provider = str(self.config.provider or "openai").strip().lower()
+            provider = _normalize_provider(self.config.provider or "openai")
             if provider == "openclaw-builtin":
                 return self._embed_openclaw_builtin(normalized)
             if provider == "ollama":
@@ -498,7 +768,7 @@ class EmbeddingService:
             temp = EmbeddingConfig(
                 provider=provider,
                 model=model or self.config.model or "text-embedding-3-small",
-                api_key_env=self._provider_api_key_env(provider),
+                api_key_env=_provider_api_key_env(provider),
                 endpoint=endpoint,
                 dimensions=dimensions,
             )
@@ -507,7 +777,7 @@ class EmbeddingService:
             temp = EmbeddingConfig(
                 provider="gemini",
                 model=model or "gemini-embedding-001",
-                api_key_env="GEMINI_API_KEY",
+                api_key_env=_provider_api_key_env("gemini"),
                 endpoint=endpoint,
                 dimensions=dimensions,
             )
@@ -516,7 +786,7 @@ class EmbeddingService:
             temp = EmbeddingConfig(
                 provider="voyage",
                 model=model or "voyage-4-lite",
-                api_key_env="VOYAGE_API_KEY",
+                api_key_env=_provider_api_key_env("voyage"),
                 endpoint=endpoint,
                 dimensions=dimensions,
             )
@@ -567,17 +837,17 @@ class EmbeddingService:
             if not model:
                 model = "mistral-embed"
         elif not provider:
-            if os.environ.get("OPENAI_API_KEY"):
+            if _resolve_configured_api_key("", "OPENAI_API_KEY", "openai")[0]:
                 provider = "openai"
                 model = model or "text-embedding-3-small"
                 endpoint = "https://api.openai.com/v1"
-            elif os.environ.get("GEMINI_API_KEY"):
+            elif _resolve_configured_api_key("", "GEMINI_API_KEY", "gemini")[0]:
                 provider = "gemini"
                 model = model or "gemini-embedding-001"
-            elif os.environ.get("VOYAGE_API_KEY"):
+            elif _resolve_configured_api_key("", "VOYAGE_API_KEY", "voyage")[0]:
                 provider = "voyage"
                 model = model or "voyage-4-lite"
-            elif os.environ.get("MISTRAL_API_KEY"):
+            elif _resolve_configured_api_key("", "MISTRAL_API_KEY", "mistral")[0]:
                 provider = "mistral"
                 model = model or "mistral-embed"
                 endpoint = "https://api.mistral.ai/v1"
@@ -594,12 +864,14 @@ class EmbeddingService:
         }
 
     def _provider_api_key_env(self, provider: str) -> str:
-        provider = str(provider or "").strip().lower()
-        if provider == "openrouter":
-            return "OPENROUTER_API_KEY"
-        if provider == "mistral":
-            return "MISTRAL_API_KEY"
-        return "OPENAI_API_KEY"
+        return _provider_api_key_env(provider)
+
+    def _resolve_api_key(self, provider: str) -> Tuple[str, str]:
+        return _resolve_configured_api_key(
+            explicit_key=self.config.api_key,
+            api_key_env=self.config.api_key_env,
+            provider=provider,
+        )
 
     def _embed_ollama(self, text: str) -> List[float]:
         endpoint = str(self.config.endpoint or "http://localhost:11434/api/embed").rstrip("/")
@@ -625,7 +897,10 @@ class EmbeddingService:
                 base_url = "https://api.mistral.ai/v1"
             else:
                 base_url = "https://api.openai.com/v1"
-        headers = {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+        api_key, _ = self._resolve_api_key(provider)
+        if not api_key:
+            raise RuntimeError(f"Missing API key for embedding provider {provider}")
+        headers = {"Authorization": f"Bearer {api_key}"}
         data = _urlopen_json(
             f"{base_url.rstrip('/')}/embeddings",
             body={"model": self.config.model, "input": text},
@@ -640,7 +915,9 @@ class EmbeddingService:
 
     def _embed_gemini(self, text: str) -> List[float]:
         endpoint = str(self.config.endpoint or "").strip()
-        api_key = self.config.api_key
+        api_key, _ = self._resolve_api_key("gemini")
+        if not api_key:
+            raise RuntimeError("Missing API key for embedding provider gemini")
         if not endpoint:
             model = self.config.model or "gemini-embedding-001"
             endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
@@ -662,7 +939,10 @@ class EmbeddingService:
 
     def _embed_voyage(self, text: str) -> List[float]:
         endpoint = str(self.config.endpoint or "https://api.voyageai.com/v1/embeddings").strip()
-        headers = {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+        api_key, _ = self._resolve_api_key("voyage")
+        if not api_key:
+            raise RuntimeError("Missing API key for embedding provider voyage")
+        headers = {"Authorization": f"Bearer {api_key}"}
         body: Dict[str, Any] = {
             "model": self.config.model or "voyage-4-lite",
             "input": [text],
@@ -1386,6 +1666,7 @@ class MemoryRuntime:
                 {"role": "user", "content": user_prompt},
             ],
             thinking=self.config.fast_model.thinking,
+            app_config=self.config,
         )
         parsed = extract_json_object(response)
         if parsed and parsed.get("classification") in {"none", "light", "deep"}:
@@ -1497,6 +1778,7 @@ class MemoryRuntime:
                 {"role": "user", "content": json.dumps(user_payload, indent=2)},
             ],
             thinking=self.config.fast_model.thinking,
+            app_config=self.config,
         )
         parsed = extract_json_object(response)
         if parsed and isinstance(parsed.get("findings"), list):
@@ -1613,6 +1895,7 @@ class MemoryRuntime:
                 {"role": "user", "content": json.dumps(user_payload, indent=2)},
             ],
             thinking=self.config.fast_model.thinking,
+            app_config=self.config,
         )
         parsed = extract_json_object(response) or {}
         raw_items = parsed.get("items", [])
@@ -1686,6 +1969,7 @@ class MemoryRuntime:
                 {"role": "user", "content": json.dumps(recent_payload, indent=2)},
             ],
             thinking=self.config.fast_model.thinking,
+            app_config=self.config,
         )
         trajectory = extract_json_object(trajectory_response) or {}
 
@@ -1731,6 +2015,7 @@ class MemoryRuntime:
                 },
             ],
             thinking=self.config.fast_model.thinking,
+            app_config=self.config,
         )
         relevance = extract_json_object(relevance_response) or {}
         scored = relevance.get("scored_memories", [])

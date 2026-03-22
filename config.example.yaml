@@ -13,6 +13,7 @@ models:
     provider: "openai"           # openai, anthropic, ollama, openrouter, etc.
     model: "gpt-5.4"
     api_key_env: "OPENAI_API_KEY"  # environment variable name holding the key
+    api_key: ""                 # optional: raw key if you want config-local auth
     # base_url: ""               # optional: override API endpoint
 
   # Fast model: for the 13 specialized agents (needs tool calling, speed > depth)
@@ -21,6 +22,7 @@ models:
     provider: "openai"
     model: "gpt-5.3-codex-spark"
     api_key_env: "OPENAI_API_KEY"
+    api_key: ""
     thinking: "high"             # reasoning effort: low, medium, high, max
 
 # ============================================================
@@ -30,9 +32,21 @@ embedding:
   provider: "openai"             # openai, ollama, gemini, voyage, mistral, openclaw-builtin
   model: "text-embedding-3-small"
   api_key_env: "OPENAI_API_KEY"
+  api_key: ""
   # endpoint: ""                 # for ollama/local: http://localhost:11434/api/embed
   dimensions: 1536               # match your model's output dimensions
   note: ""                       # optional: setup writes extra context here for OpenClaw built-in mode
+
+# ============================================================
+# Gateway — preferred for OpenClaw installs
+# ============================================================
+gateway:
+  enabled: false
+  base_url: ""                   # e.g. http://127.0.0.1:18789
+  port: 0
+  token_env: "OPENCLAW_GATEWAY_TOKEN"
+  token: ""                      # optional: setup can write the detected gateway token here
+  prefer_for_models: false       # OpenClaw installs should usually set this to true
 
 # ============================================================
 # Storage — where memories live

@@ -36,6 +36,8 @@ PRIMARY_MODEL=""
 FAST_MODEL=""
 PRIMARY_BASE_URL=""
 API_KEY_ENV=""
+PRIMARY_API_KEY_VALUE=""
+PRIMARY_API_KEY_SOURCE=""
 
 EMBED_PROVIDER=""
 EMBED_MODEL=""
@@ -44,6 +46,15 @@ EMBED_ENDPOINT=""
 EMBED_KEY_ENV=""
 EMBED_NOTE=""
 EMBED_SELECTION_LABEL=""
+EMBED_API_KEY_VALUE=""
+EMBED_API_KEY_SOURCE=""
+
+GATEWAY_ENABLED="false"
+GATEWAY_BASE_URL=""
+GATEWAY_PORT="0"
+GATEWAY_TOKEN_ENV="OPENCLAW_GATEWAY_TOKEN"
+GATEWAY_TOKEN=""
+GATEWAY_PREFER_FOR_MODELS="false"
 
 OPENCLAW_EMBED_STRATEGY="builtin"
 OPENCLAW_MEMORYSEARCH_PROVIDER=""
@@ -144,6 +155,239 @@ slugify() {
     raw="assistant"
   fi
   printf '%s' "$raw"
+}
+
+provider_api_key_env() {
+  local provider
+  provider="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$provider" in
+    anthropic) printf '%s' "ANTHROPIC_API_KEY" ;;
+    openai) printf '%s' "OPENAI_API_KEY" ;;
+    openrouter) printf '%s' "OPENROUTER_API_KEY" ;;
+    gemini|google) printf '%s' "GEMINI_API_KEY" ;;
+    mistral) printf '%s' "MISTRAL_API_KEY" ;;
+    voyage) printf '%s' "VOYAGE_API_KEY" ;;
+    xai) printf '%s' "XAI_API_KEY" ;;
+    ollama|openclaw-builtin|"") printf '%s' "" ;;
+    *) printf '%s' "API_KEY" ;;
+  esac
+}
+
+provider_display_name() {
+  local provider
+  provider="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$provider" in
+    anthropic) printf '%s' "Anthropic" ;;
+    openai) printf '%s' "OpenAI" ;;
+    openrouter) printf '%s' "OpenRouter" ;;
+    gemini|google) printf '%s' "Gemini" ;;
+    mistral) printf '%s' "Mistral" ;;
+    voyage) printf '%s' "Voyage" ;;
+    ollama) printf '%s' "Ollama" ;;
+    openclaw-builtin) printf '%s' "OpenClaw built-in" ;;
+    *) printf '%s' "Provider" ;;
+  esac
+}
+
+upsert_env_file() {
+  local key="$1"
+  local value="$2"
+  local env_file="${3:-.env}"
+  local temp_file=""
+  local escaped=""
+
+  [ -n "$key" ] || return 0
+  touch "$env_file"
+  temp_file="$(mktemp "${TMPDIR:-/tmp}/oam-env.XXXXXX")"
+  grep -vE "^${key}=" "$env_file" > "$temp_file" 2>/dev/null || true
+  escaped="$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '%s="%s"\n' "$key" "$escaped" >> "$temp_file"
+  mv "$temp_file" "$env_file"
+}
+
+detect_openclaw_provider_auth_source() {
+  local provider="$1"
+  local env_name="$2"
+
+  python3 - "$provider" "$env_name" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+provider = str(sys.argv[1] or "").strip().lower()
+env_name = str(sys.argv[2] or "").strip()
+if provider == "google":
+    provider = "gemini"
+
+aliases = {
+    "anthropic": {"anthropic"},
+    "openai": {"openai"},
+    "openrouter": {"openrouter"},
+    "gemini": {"gemini", "google"},
+    "mistral": {"mistral"},
+    "voyage": {"voyage"},
+    "xai": {"xai"},
+}.get(provider, {provider} if provider else set())
+
+state_dir = Path.home() / ".openclaw"
+config_path = state_dir / "openclaw.json"
+auth_path = state_dir / "agents" / "main" / "agent" / "auth-profiles.json"
+
+def load_json(path: Path):
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+cfg = load_json(config_path)
+env_block = cfg.get("env", {}) if isinstance(cfg.get("env"), dict) else {}
+if env_name and str(env_block.get(env_name, "") or "").strip():
+    print(f"openclaw.env:{env_name}")
+    raise SystemExit(0)
+
+if not auth_path.exists():
+    for candidate in (state_dir / "agents").glob("*/agent/auth-profiles.json"):
+        auth_path = candidate
+        break
+
+auth_payload = load_json(auth_path)
+profiles = auth_payload.get("profiles", {}) if isinstance(auth_payload.get("profiles"), dict) else {}
+for profile_name, profile in profiles.items():
+    if not isinstance(profile, dict):
+        continue
+    profile_provider = str(profile.get("provider", "") or "").strip().lower()
+    if profile_provider == "google":
+        profile_provider = "gemini"
+    if profile_provider not in aliases:
+        continue
+    for field in ("token", "apiKey", "access", "password"):
+        if str(profile.get(field, "") or "").strip():
+            print(f"openclaw.auth:{profile_name}")
+            raise SystemExit(0)
+PY
+}
+
+detect_openclaw_gateway_port() {
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path.home() / ".openclaw" / "openclaw.json"
+if not path.exists():
+    raise SystemExit(0)
+try:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+gateway = raw.get("gateway", {}) if isinstance(raw.get("gateway"), dict) else {}
+http = gateway.get("http", {}) if isinstance(gateway.get("http"), dict) else {}
+endpoints = http.get("endpoints", {}) if isinstance(http.get("endpoints"), dict) else {}
+chat = endpoints.get("chatCompletions", {}) if isinstance(endpoints.get("chatCompletions"), dict) else {}
+port = gateway.get("port") or 0
+if port and chat.get("enabled"):
+    print(port)
+PY
+}
+
+detect_openclaw_gateway_token() {
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+token = os.environ.get("OPENCLAW_GATEWAY_TOKEN") or os.environ.get("OPENCLAW_GATEWAY_PASSWORD") or ""
+if token:
+    print(token)
+    raise SystemExit(0)
+
+path = Path.home() / ".openclaw" / "openclaw.json"
+if not path.exists():
+    raise SystemExit(0)
+try:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+gateway = raw.get("gateway", {}) if isinstance(raw.get("gateway"), dict) else {}
+auth = gateway.get("auth", {}) if isinstance(gateway.get("auth"), dict) else {}
+token = str(auth.get("token", "") or auth.get("password", "") or "").strip()
+if token:
+    print(token)
+PY
+}
+
+configure_openclaw_gateway() {
+  if [ "$FRAMEWORK" != "openclaw" ]; then
+    GATEWAY_ENABLED="false"
+    GATEWAY_BASE_URL=""
+    GATEWAY_PORT="0"
+    GATEWAY_TOKEN=""
+    GATEWAY_PREFER_FOR_MODELS="false"
+    return 0
+  fi
+
+  GATEWAY_ENABLED="true"
+  GATEWAY_PREFER_FOR_MODELS="true"
+  GATEWAY_PORT="$(detect_openclaw_gateway_port || true)"
+  GATEWAY_PORT="${GATEWAY_PORT:-0}"
+  if [ "$GATEWAY_PORT" != "0" ]; then
+    GATEWAY_BASE_URL="http://127.0.0.1:${GATEWAY_PORT}"
+  else
+    GATEWAY_BASE_URL=""
+  fi
+  GATEWAY_TOKEN="$(detect_openclaw_gateway_token || true)"
+}
+
+resolve_provider_auth_setup() {
+  local provider="$1"
+  local env_name="$2"
+  local prompt_name="$3"
+  local allow_gateway="${4:-false}"
+  local openclaw_source=""
+
+  RESOLVED_AUTH_SOURCE=""
+  RESOLVED_AUTH_VALUE=""
+
+  if [ -z "$env_name" ]; then
+    RESOLVED_AUTH_SOURCE="not-needed"
+    return 0
+  fi
+
+  if [ -n "${!env_name:-}" ]; then
+    RESOLVED_AUTH_SOURCE="env:${env_name}"
+    return 0
+  fi
+
+  if [ "$FRAMEWORK" = "openclaw" ]; then
+    openclaw_source="$(detect_openclaw_provider_auth_source "$provider" "$env_name" || true)"
+    if [ -n "$openclaw_source" ]; then
+      RESOLVED_AUTH_SOURCE="$openclaw_source"
+      return 0
+    fi
+  fi
+
+  if [ "$allow_gateway" = "true" ]; then
+    read -r -s -p "  Enter your ${prompt_name} API key (or press Enter to use OpenClaw's gateway for all model calls): " RESOLVED_AUTH_VALUE
+  else
+    read -r -s -p "  Enter your ${prompt_name} API key (optional - save it to .env for direct calls): " RESOLVED_AUTH_VALUE
+  fi
+  echo
+  RESOLVED_AUTH_VALUE="$(trim "$RESOLVED_AUTH_VALUE")"
+
+  if [ -n "$RESOLVED_AUTH_VALUE" ]; then
+    upsert_env_file "$env_name" "$RESOLVED_AUTH_VALUE" ".env"
+    export "${env_name}=${RESOLVED_AUTH_VALUE}"
+    RESOLVED_AUTH_SOURCE="dotenv:${env_name}"
+    return 0
+  fi
+
+  if [ "$allow_gateway" = "true" ]; then
+    RESOLVED_AUTH_SOURCE="gateway"
+  else
+    RESOLVED_AUTH_SOURCE="missing"
+  fi
 }
 
 brain_key_exists() {
@@ -980,30 +1224,81 @@ echo
 echo -e "${WHITE}${BOLD}  Step 6: API Keys${NC}"
 echo
 
+configure_openclaw_gateway
+
 if [ "$FRAMEWORK" = "openclaw" ]; then
-  info "OpenClaw handles the main chat transport, but the specialized recall/observer/scout agents still use the provider you selected above."
+  info "OpenClaw will be the preferred path for all model calls when its local gateway is available."
+  if [ "$GATEWAY_PORT" != "0" ]; then
+    success "OpenClaw gateway detected at $GATEWAY_BASE_URL."
+  else
+    warn "OpenClaw gateway metadata was not detected. The runtime will still fall back to provider auth or auto-discovery."
+  fi
 fi
 
-if [ -n "$API_KEY_ENV" ]; then
-  if [ -n "${!API_KEY_ENV:-}" ]; then
-    success "$API_KEY_ENV is already set."
+resolve_provider_auth_setup "$PROVIDER" "$API_KEY_ENV" "$(provider_display_name "$PROVIDER")" "$([ "$FRAMEWORK" = "openclaw" ] && printf '%s' "true" || printf '%s' "false")"
+PRIMARY_API_KEY_VALUE="$RESOLVED_AUTH_VALUE"
+PRIMARY_API_KEY_SOURCE="$RESOLVED_AUTH_SOURCE"
+
+case "$PRIMARY_API_KEY_SOURCE" in
+  env:*)
+    success "$API_KEY_ENV is already set in the current environment."
+    ;;
+  openclaw.env:*|openclaw.auth:*)
+    success "$(provider_display_name "$PROVIDER") credentials found in OpenClaw (${PRIMARY_API_KEY_SOURCE})."
+    ;;
+  dotenv:*)
+    success "$(provider_display_name "$PROVIDER") API key saved to .env."
+    ;;
+  gateway)
+    info "No separate $(provider_display_name "$PROVIDER") key was provided. Sub-agents will use the OpenClaw gateway."
+    ;;
+  not-needed)
+    info "No primary provider API key is needed for this selection."
+    ;;
+  *)
+    warn "$(provider_display_name "$PROVIDER") credentials were not detected automatically."
+    if [ -n "$API_KEY_ENV" ]; then
+      info "You can add one later in .env or export ${API_KEY_ENV} before starting the service."
+    fi
+    ;;
+esac
+
+if [ -n "$EMBED_KEY_ENV" ]; then
+  if [ "$EMBED_KEY_ENV" = "$API_KEY_ENV" ] && [ "$PRIMARY_API_KEY_SOURCE" != "gateway" ] && [ "$PRIMARY_API_KEY_SOURCE" != "missing" ] && [ "$PRIMARY_API_KEY_SOURCE" != "not-needed" ]; then
+    EMBED_API_KEY_VALUE="$PRIMARY_API_KEY_VALUE"
+    EMBED_API_KEY_SOURCE="$PRIMARY_API_KEY_SOURCE"
   else
-    warn "$API_KEY_ENV is not set in the current shell."
-    info "Export it before running the service for agent orchestration:"
-    echo -e "  ${CYAN}export $API_KEY_ENV=your-key-here${NC}"
+    resolve_provider_auth_setup "$EMBED_PROVIDER" "$EMBED_KEY_ENV" "$(provider_display_name "$EMBED_PROVIDER")" "false"
+    EMBED_API_KEY_VALUE="$RESOLVED_AUTH_VALUE"
+    EMBED_API_KEY_SOURCE="$RESOLVED_AUTH_SOURCE"
   fi
+
+  case "$EMBED_API_KEY_SOURCE" in
+    env:*)
+      success "$EMBED_KEY_ENV is already set for embeddings."
+      ;;
+    openclaw.env:*|openclaw.auth:*)
+      success "$(provider_display_name "$EMBED_PROVIDER") embedding credentials found in OpenClaw (${EMBED_API_KEY_SOURCE})."
+      ;;
+    dotenv:*)
+      success "$(provider_display_name "$EMBED_PROVIDER") embedding key saved to .env."
+      ;;
+    not-needed)
+      info "No embedding API key is needed for this selection."
+      ;;
+    *)
+      warn "Embedding credentials were not detected automatically."
+      info "Memory search will need ${EMBED_KEY_ENV} in .env or your shell if this provider requires direct API access."
+      ;;
+  esac
 else
-  info "No primary provider API key is needed for this selection."
+  EMBED_API_KEY_SOURCE="not-needed"
+  info "No embedding API key is needed for this selection."
 fi
 
-if [ -n "$EMBED_KEY_ENV" ] && [ "$EMBED_KEY_ENV" != "$API_KEY_ENV" ]; then
-  if [ -n "${!EMBED_KEY_ENV:-}" ]; then
-    success "$EMBED_KEY_ENV is already set for embeddings."
-  else
-    warn "$EMBED_KEY_ENV is not set in the current shell."
-    info "Export it before using memory search:"
-    echo -e "  ${CYAN}export $EMBED_KEY_ENV=your-key-here${NC}"
-  fi
+if [ "$FRAMEWORK" = "openclaw" ] && [ "$PRIMARY_API_KEY_SOURCE" = "gateway" ] && [ "$GATEWAY_PORT" = "0" ]; then
+  warn "You chose gateway-only model auth, but no local OpenClaw gateway port was detected yet."
+  info "If sub-agents fail later, start OpenClaw's gateway or add ${API_KEY_ENV} to .env."
 fi
 
 divider
@@ -1055,11 +1350,13 @@ models:
     provider: "$(yaml_quote "$PROVIDER")"
     model: "$(yaml_quote "$PRIMARY_MODEL")"
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
+    api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
   fast:
     provider: "$(yaml_quote "$PROVIDER")"
     model: "$(yaml_quote "$FAST_MODEL")"
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
+    api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
     thinking: "high"
 
@@ -1067,9 +1364,18 @@ embedding:
   provider: "$(yaml_quote "$EMBED_PROVIDER")"
   model: "$(yaml_quote "$EMBED_MODEL")"
   api_key_env: "$(yaml_quote "$EMBED_KEY_ENV")"
+  api_key: "$(yaml_quote "$EMBED_API_KEY_VALUE")"
   endpoint: "$(yaml_quote "$EMBED_ENDPOINT")"
   dimensions: $EMBED_DIMS
   note: "$(yaml_quote "$EMBED_NOTE")"
+
+gateway:
+  enabled: $GATEWAY_ENABLED
+  base_url: "$(yaml_quote "$GATEWAY_BASE_URL")"
+  port: $GATEWAY_PORT
+  token_env: "$(yaml_quote "$GATEWAY_TOKEN_ENV")"
+  token: "$(yaml_quote "$GATEWAY_TOKEN")"
+  prefer_for_models: $GATEWAY_PREFER_FOR_MODELS
 
 storage:
   vector:
@@ -1156,8 +1462,12 @@ echo -e "    Embedding:  ${CYAN}$EMBED_SELECTION_LABEL${NC}"
 echo -e "    Chatbots:   ${CYAN}$NUM_BRAINS${NC}"
 echo
 info "config.yaml, data/memory.db, data/vector/, and per-brain vault folders are ready."
+if [ -f ".env" ]; then
+  info "Any keys entered during setup were saved to .env for future launches."
+fi
 if [ "$FRAMEWORK" = "openclaw" ]; then
-  info "OpenClaw memorySearch is configured. Per-brain agents will be registered automatically as each chatbot identity is saved in the browser."
+  info "OpenClaw memorySearch is configured, and gateway routing will be preferred when the local gateway is running."
+  info "Per-brain agents will be registered automatically as each chatbot identity is saved in the browser."
 fi
 
 divider

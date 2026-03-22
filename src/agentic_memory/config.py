@@ -7,9 +7,62 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - setup installs dependency
+    load_dotenv = None  # type: ignore[assignment]
+
+
+_LOADED_ENV_FILES: Set[str] = set()
+
+
+def load_env_file(path: Path, override: bool = False) -> bool:
+    env_path = Path(path)
+    if not env_path.exists():
+        return False
+
+    resolved = str(env_path.resolve())
+    if resolved in _LOADED_ENV_FILES:
+        return False
+
+    if load_dotenv is not None:
+        load_dotenv(env_path, override=override)
+    else:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if value and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            if override or key not in os.environ:
+                os.environ[key] = value
+
+    _LOADED_ENV_FILES.add(resolved)
+    return True
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return default
 
 
 @dataclass
@@ -17,12 +70,9 @@ class ModelConfig:
     provider: str = "openai"
     model: str = "gpt-5.4"
     api_key_env: str = "OPENAI_API_KEY"
+    api_key: str = ""
     base_url: str = ""
     thinking: str = "high"
-
-    @property
-    def api_key(self) -> str:
-        return os.environ.get(self.api_key_env, "")
 
 
 @dataclass
@@ -30,13 +80,10 @@ class EmbeddingConfig:
     provider: str = "openai"
     model: str = "text-embedding-3-small"
     api_key_env: str = "OPENAI_API_KEY"
+    api_key: str = ""
     endpoint: str = ""
     dimensions: int = 1536
     note: str = ""
-
-    @property
-    def api_key(self) -> str:
-        return os.environ.get(self.api_key_env, "")
 
 
 @dataclass
@@ -71,6 +118,16 @@ class AgentConfig:
 
 
 @dataclass
+class GatewayConfig:
+    enabled: bool = False
+    base_url: str = ""
+    port: int = 0
+    token_env: str = "OPENCLAW_GATEWAY_TOKEN"
+    token: str = ""
+    prefer_for_models: bool = False
+
+
+@dataclass
 class Config:
     primary_model: ModelConfig = field(default_factory=ModelConfig)
     fast_model: ModelConfig = field(default_factory=lambda: ModelConfig(model="gpt-5.3-codex-spark"))
@@ -78,6 +135,7 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     brains: List[BrainConfig] = field(default_factory=lambda: [BrainConfig()])
     agents: AgentConfig = field(default_factory=AgentConfig)
+    gateway: GatewayConfig = field(default_factory=GatewayConfig)
     framework: str = "standalone"
     server_host: str = "127.0.0.1"
     server_port: int = 8400
@@ -86,6 +144,7 @@ class Config:
 def load_config(path: str = "config.yaml") -> Config:
     """Load configuration from YAML file."""
     config_path = Path(path)
+    load_env_file(config_path.parent / ".env")
     if not config_path.exists():
         return Config()
 
@@ -105,6 +164,7 @@ def load_config(path: str = "config.yaml") -> Config:
     observer = agent_cfg.get("observer", {})
     gate = agent_cfg.get("gate", {})
     scouts = agent_cfg.get("scouts", {})
+    gateway = raw.get("gateway", {})
     server = raw.get("server", {})
 
     brains = []
@@ -120,12 +180,14 @@ def load_config(path: str = "config.yaml") -> Config:
             provider=primary.get("provider", "openai"),
             model=primary.get("model", "gpt-5.4"),
             api_key_env=primary.get("api_key_env", "OPENAI_API_KEY"),
+            api_key=primary.get("api_key", ""),
             base_url=primary.get("base_url", ""),
         ),
         fast_model=ModelConfig(
             provider=fast.get("provider", "openai"),
             model=fast.get("model", "gpt-5.3-codex-spark"),
             api_key_env=fast.get("api_key_env", "OPENAI_API_KEY"),
+            api_key=fast.get("api_key", ""),
             base_url=fast.get("base_url", ""),
             thinking=fast.get("thinking", "high"),
         ),
@@ -133,6 +195,7 @@ def load_config(path: str = "config.yaml") -> Config:
             provider=emb.get("provider", "openai"),
             model=emb.get("model", "text-embedding-3-small"),
             api_key_env=emb.get("api_key_env", "OPENAI_API_KEY"),
+            api_key=emb.get("api_key", ""),
             endpoint=emb.get("endpoint", ""),
             dimensions=emb.get("dimensions", 1536),
             note=emb.get("note", ""),
@@ -146,17 +209,25 @@ def load_config(path: str = "config.yaml") -> Config:
         ),
         brains=brains,
         agents=AgentConfig(
-            recall_enabled=recall.get("enabled", True),
+            recall_enabled=_as_bool(recall.get("enabled", True), True),
             recall_timeout=recall.get("timeout_seconds", 90),
             recall_merge_limit=recall.get("merge_limit", 8),
-            observer_enabled=observer.get("enabled", True),
+            observer_enabled=_as_bool(observer.get("enabled", True), True),
             observer_interval=observer.get("interval_seconds", 900),
             observer_min_messages=observer.get("min_messages", 3),
             observer_max_per_cycle=observer.get("max_observations_per_cycle", 10),
-            gate_enabled=gate.get("enabled", True),
+            gate_enabled=_as_bool(gate.get("enabled", True), True),
             gate_timeout=gate.get("timeout_seconds", 15),
-            scouts_enabled=scouts.get("enabled", True),
+            scouts_enabled=_as_bool(scouts.get("enabled", True), True),
             scouts_timeout=scouts.get("timeout_seconds", 45),
+        ),
+        gateway=GatewayConfig(
+            enabled=_as_bool(gateway.get("enabled", raw.get("framework", "standalone") == "openclaw"), raw.get("framework", "standalone") == "openclaw"),
+            base_url=gateway.get("base_url", ""),
+            port=int(gateway.get("port", 0) or 0),
+            token_env=gateway.get("token_env", "OPENCLAW_GATEWAY_TOKEN"),
+            token=gateway.get("token", ""),
+            prefer_for_models=_as_bool(gateway.get("prefer_for_models", raw.get("framework", "standalone") == "openclaw"), raw.get("framework", "standalone") == "openclaw"),
         ),
         framework=raw.get("framework", "standalone"),
         server_host=server.get("host", "127.0.0.1"),
