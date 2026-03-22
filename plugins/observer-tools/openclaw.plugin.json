@@ -1,0 +1,13 @@
+{
+  "id": "oam-observer-tools",
+  "name": "OAM Observer Tools",
+  "description": "Background observation tools for Open Agentic Memory agents.",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "baseUrl": {"type": "string"},
+      "allowedAgents": {"type": "array", "items": {"type": "string"}},
+      "timeoutMs": {"type": "number"}
+    }
+  }
+}

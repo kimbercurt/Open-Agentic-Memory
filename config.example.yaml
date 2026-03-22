@@ -1,0 +1,97 @@
+# Open Agentic Memory — Configuration
+# Copy this to config.yaml and fill in your values.
+
+# ============================================================
+# Models — plug in whatever you have
+# ============================================================
+models:
+  # Primary model: your main chatbot LLM (needs large context, strong reasoning)
+  # Examples: gpt-5.4, claude-opus-4-6, llama4:maverick, gemini-3.1-pro
+  primary:
+    provider: "openai"           # openai, anthropic, ollama, openrouter, etc.
+    model: "gpt-5.4"
+    api_key_env: "OPENAI_API_KEY"  # environment variable name holding the key
+    # base_url: ""               # optional: override API endpoint
+
+  # Fast model: for the 13 specialized agents (needs tool calling, speed > depth)
+  # Examples: gpt-5.3-codex-spark, claude-haiku-4-5, llama4:scout, gemini-3-flash
+  fast:
+    provider: "openai"
+    model: "gpt-5.3-codex-spark"
+    api_key_env: "OPENAI_API_KEY"
+    thinking: "high"             # reasoning effort: low, medium, high, max
+
+# ============================================================
+# Embedding — any embedding model
+# ============================================================
+embedding:
+  provider: "openai"             # openai, ollama, local, huggingface
+  model: "text-embedding-3-small"
+  api_key_env: "OPENAI_API_KEY"
+  # endpoint: ""                 # for ollama/local: http://localhost:11434/api/embed
+  dimensions: 1536               # match your model's output dimensions
+
+# ============================================================
+# Storage — where memories live
+# ============================================================
+storage:
+  # Vector store for semantic search
+  vector:
+    backend: "qdrant"            # qdrant, pinecone, pgvector, faiss, chroma
+    path: "./data/vector"        # for local backends
+    # url: ""                    # for hosted backends
+    # api_key_env: ""
+
+  # Structured store for metadata
+  database:
+    backend: "sqlite"            # sqlite, postgres, mysql
+    path: "./data/memory.db"     # for sqlite
+    # connection_string: ""      # for postgres/mysql
+
+  # Knowledge graph vault (markdown files)
+  vault:
+    path: "./data/vault"
+
+# ============================================================
+# Brains — define your chatbot agents
+# ============================================================
+brains:
+  - key: "assistant"
+    name: "Assistant"
+    description: "Primary AI assistant"
+    # Each brain gets its own isolated memory, vault, and 6 dedicated agents
+
+  # Add more brains as needed:
+  # - key: "researcher"
+  #   name: "Researcher"
+  #   description: "Research-focused agent with separate memory"
+
+# ============================================================
+# Agent Behavior
+# ============================================================
+agents:
+  recall:
+    enabled: true
+    timeout_seconds: 90
+    merge_limit: 8               # max results returned from recall
+
+  observer:
+    enabled: true
+    interval_seconds: 900        # 15 minutes
+    min_messages: 3              # minimum new messages before observing
+    max_observations_per_cycle: 10
+
+  gate:
+    enabled: true
+    timeout_seconds: 15
+
+  scouts:
+    enabled: true
+    timeout_seconds: 45
+
+# ============================================================
+# Server
+# ============================================================
+server:
+  host: "127.0.0.1"
+  port: 8400

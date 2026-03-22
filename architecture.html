@@ -1,0 +1,2448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Agentic Memory Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-card-hover: #1a1a28;
+    --border: #1e1e2e;
+    --border-glow: #2a2a4a;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --text-bright: #ffffff;
+    --accent-blue: #4a9eff;
+    --accent-purple: #8b5cf6;
+    --accent-amber: #f59e0b;
+    --accent-green: #10b981;
+    --accent-rose: #f43f5e;
+    --accent-cyan: #06b6d4;
+    --accent-indigo: #6366f1;
+    --glow-blue: rgba(74, 158, 255, 0.15);
+    --glow-purple: rgba(139, 92, 246, 0.15);
+    --glow-amber: rgba(245, 158, 11, 0.15);
+    --glow-green: rgba(16, 185, 129, 0.15);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(rgba(74, 158, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74, 158, 255, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Ambient glow orbs */
+  .ambient-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+    animation: orbFloat 20s ease-in-out infinite;
+  }
+  .ambient-orb.orb1 { width: 400px; height: 400px; background: var(--accent-blue); top: -100px; left: -100px; animation-delay: 0s; }
+  .ambient-orb.orb2 { width: 350px; height: 350px; background: var(--accent-purple); bottom: -50px; right: -50px; animation-delay: -7s; }
+  .ambient-orb.orb3 { width: 300px; height: 300px; background: var(--accent-amber); top: 50%; left: 50%; transform: translate(-50%, -50%); animation-delay: -14s; opacity: 0.2; }
+
+  @keyframes orbFloat {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    25% { transform: translate(30px, -20px) scale(1.05); }
+    50% { transform: translate(-20px, 30px) scale(0.95); }
+    75% { transform: translate(20px, 20px) scale(1.02); }
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* Header */
+  .hero {
+    text-align: center;
+    padding: 60px 0 50px;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, var(--glow-blue), var(--glow-purple));
+    border: 1px solid var(--border-glow);
+    border-radius: 100px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-blue);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero-badge .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .hero h1 {
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 800;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    background: linear-gradient(135deg, var(--text-bright) 0%, var(--accent-blue) 50%, var(--accent-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+  }
+  .hero .subtitle {
+    font-size: 18px;
+    color: var(--text-dim);
+    max-width: 700px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* Section headers */
+  .section-header {
+    text-align: center;
+    margin: 70px 0 40px;
+  }
+  .section-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .section-header p {
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  /* Arch overview */
+  .arch-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin: 40px 0;
+  }
+
+  .arch-row {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .arch-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+  }
+  .arch-connector .line {
+    width: 2px;
+    height: 30px;
+    background: linear-gradient(180deg, var(--accent-blue), transparent);
+    position: relative;
+  }
+  .arch-connector .line::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--accent-blue);
+  }
+  .arch-connector.multi {
+    flex-direction: row;
+    gap: 0;
+    width: 100%;
+    max-width: 900px;
+    justify-content: space-around;
+    position: relative;
+  }
+  .arch-connector.multi::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent-purple), transparent);
+  }
+  .arch-connector.multi .branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .arch-connector.multi .branch .line {
+    background: linear-gradient(180deg, var(--accent-purple), transparent);
+  }
+  .arch-connector.multi .branch .line::after {
+    border-top-color: var(--accent-purple);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 16px 16px 0 0;
+  }
+  .card.blue::before { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .card.purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .card.amber::before { background: linear-gradient(90deg, var(--accent-amber), transparent); }
+  .card.green::before { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .card.rose::before { background: linear-gradient(90deg, var(--accent-rose), transparent); }
+  .card.cyan::before { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .card.indigo::before { background: linear-gradient(90deg, var(--accent-indigo), transparent); }
+
+  .card-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 14px;
+  }
+  .card-icon.blue { background: var(--glow-blue); }
+  .card-icon.purple { background: var(--glow-purple); }
+  .card-icon.amber { background: var(--glow-amber); }
+  .card-icon.green { background: var(--glow-green); }
+
+  .card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 6px;
+  }
+  .card p, .card li {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .card ul {
+    list-style: none;
+    padding: 0;
+    margin-top: 10px;
+  }
+  .card li {
+    padding: 3px 0 3px 16px;
+    position: relative;
+  }
+  .card li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 11px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+  }
+
+  /* Agent/brain main block */
+  .brain-card {
+    width: 280px;
+    min-height: 160px;
+  }
+  .brain-card.wide { width: 380px; }
+  .brain-card.full { width: 100%; max-width: 600px; }
+
+  /* The big flow diagram */
+  .flow-diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    margin: 40px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .flow-diagram::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-amber));
+  }
+
+  /* Data flow animation */
+  .data-path {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 30px 0;
+    flex-wrap: wrap;
+  }
+
+  .flow-node {
+    background: var(--bg);
+    border: 1px solid var(--border-glow);
+    border-radius: 12px;
+    padding: 14px 20px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    min-width: 140px;
+  }
+  .flow-node .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+  .flow-node .label.blue { color: var(--accent-blue); }
+  .flow-node .label.purple { color: var(--accent-purple); }
+  .flow-node .label.amber { color: var(--accent-amber); }
+  .flow-node .label.green { color: var(--accent-green); }
+  .flow-node .label.rose { color: var(--accent-rose); }
+  .flow-node .label.cyan { color: var(--accent-cyan); }
+  .flow-node .desc {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    position: relative;
+    z-index: 1;
+  }
+  .flow-arrow .arrow-line {
+    width: 40px;
+    height: 2px;
+    position: relative;
+    overflow: visible;
+  }
+  .flow-arrow .arrow-line::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--border-glow);
+  }
+  .flow-arrow .arrow-line::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 6px solid var(--border-glow);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  /* Animated data packet */
+  .flow-arrow .packet {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    top: 50%;
+    transform: translateY(-50%);
+    animation: packetMove 2s ease-in-out infinite;
+  }
+  .flow-arrow .packet.blue { background: var(--accent-blue); box-shadow: 0 0 10px var(--accent-blue); }
+  .flow-arrow .packet.purple { background: var(--accent-purple); box-shadow: 0 0 10px var(--accent-purple); }
+  .flow-arrow .packet.amber { background: var(--accent-amber); box-shadow: 0 0 10px var(--accent-amber); }
+  .flow-arrow .packet.green { background: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
+
+  @keyframes packetMove {
+    0% { left: -4px; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { left: calc(100% - 4px); opacity: 0; }
+  }
+
+  /* Recall agents trio */
+  .agent-trio {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .agent-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  .agent-card:hover {
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
+  }
+  .agent-card::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(from 0deg, transparent, transparent, transparent, transparent);
+    animation: borderRotate 8s linear infinite;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: -1;
+  }
+  .agent-card:hover::after { opacity: 1; }
+
+  @keyframes borderRotate {
+    100% { transform: rotate(360deg); }
+  }
+
+  .agent-card .agent-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .agent-card .agent-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .agent-card .agent-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+  .agent-card .agent-model {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: auto;
+  }
+  .agent-card .agent-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .agent-card .agent-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .agent-card .tool-tag {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(74, 158, 255, 0.1);
+    color: var(--accent-blue);
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(74, 158, 255, 0.15);
+  }
+
+  /* Stats strip */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin: 30px 0;
+  }
+  .stat-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+  }
+  .stat-box .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .stat-box .stat-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Knowledge graph viz */
+  .graph-viz {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    margin: 30px 0;
+  }
+  .graph-viz canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Layer diagram */
+  .layers {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 30px 0;
+  }
+  .layer {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 70px;
+  }
+  .layer-label {
+    width: 180px;
+    min-width: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .layer-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .layer.l1 .layer-label { background: rgba(74, 158, 255, 0.15); color: var(--accent-blue); }
+  .layer.l1 .layer-content { background: rgba(74, 158, 255, 0.05); border: 1px solid rgba(74, 158, 255, 0.1); border-left: none; }
+  .layer.l2 .layer-label { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); }
+  .layer.l2 .layer-content { background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.1); border-left: none; }
+  .layer.l3 .layer-label { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+  .layer.l3 .layer-content { background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.1); border-left: none; }
+  .layer.l4 .layer-label { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+  .layer.l4 .layer-content { background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.1); border-left: none; }
+  .layer.l5 .layer-label { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
+  .layer.l5 .layer-content { background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.1); border-left: none; }
+  .layer.l6 .layer-label { background: rgba(99, 102, 241, 0.15); color: var(--accent-indigo); }
+  .layer.l6 .layer-content { background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.1); border-left: none; }
+
+  .layer-item {
+    font-size: 12px;
+    color: var(--text);
+    background: rgba(0,0,0,0.3);
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  /* Timeline */
+  .timeline-section {
+    margin: 40px 0;
+  }
+  .timeline {
+    position: relative;
+    padding: 20px 0 20px 40px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--accent-blue), var(--accent-purple), var(--accent-amber), var(--accent-green));
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 24px;
+    padding-left: 20px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -29px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-blue);
+    background: var(--bg);
+  }
+  .timeline-item:nth-child(2)::before { border-color: var(--accent-purple); }
+  .timeline-item:nth-child(3)::before { border-color: var(--accent-amber); }
+  .timeline-item:nth-child(4)::before { border-color: var(--accent-green); }
+  .timeline-item .tl-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+  }
+  .timeline-item .tl-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* Tech spec */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .tech-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .tech-item .tech-icon {
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    flex-shrink: 0;
+  }
+  .tech-item h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 3px;
+  }
+  .tech-item p {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  /* Code block */
+  .code-block {
+    background: #0d0d14;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    overflow-x: auto;
+  }
+  .code-block .kw { color: var(--accent-purple); }
+  .code-block .fn { color: var(--accent-blue); }
+  .code-block .str { color: var(--accent-green); }
+  .code-block .comment { color: #555570; font-style: italic; }
+  .code-block .num { color: var(--accent-amber); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 60px 0 30px;
+    border-top: 1px solid var(--border);
+    margin-top: 60px;
+  }
+  .footer p {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .footer .logo-text {
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .arch-row { flex-direction: column; align-items: center; }
+    .brain-card { width: 100% !important; max-width: 400px; }
+    .layer { flex-direction: column; }
+    .layer-label { width: 100%; min-width: 0; }
+    .data-path { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); padding: 6px 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient-orb orb1"></div>
+<div class="ambient-orb orb2"></div>
+<div class="ambient-orb orb3"></div>
+
+<div class="container">
+
+  <!-- ===== HERO BRAIN VISUALIZATION ===== -->
+  <div id="brainHero" style="position:relative; width:100%; height:min(95vh,1100px); margin-bottom:10px; border-radius:24px; overflow:hidden; border:1px solid var(--border);">
+    <canvas id="brainCanvas" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+    <!-- Overlay text -->
+    <div style="position:absolute;left:0;right:0;bottom:0;height:220px;background:linear-gradient(0deg, rgba(10,10,15,0.95) 0%, rgba(10,10,15,0.6) 50%, transparent 100%);pointer-events:none;z-index:9;"></div>
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 24px 28px;pointer-events:none;z-index:10;">
+      <div class="hero-badge" style="pointer-events:auto;"><span class="dot"></span> Open Architecture</div>
+      <h1 style="font-size:clamp(32px,5vw,52px);font-weight:800;letter-spacing:-1.5px;line-height:1.1;background:linear-gradient(135deg,#fff 0%,var(--accent-blue) 50%,var(--accent-purple) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;text-align:center;">Open Agentic Memory</h1>
+      <p style="font-size:16px;color:var(--text-dim);max-width:680px;text-align:center;line-height:1.6;">A multi-agent, multi-perspective memory system that uses parallel AI agents for both recall and observation &mdash; combining passive storage, active observation, and intelligent retrieval into a single unified architecture.</p>
+    </div>
+    <!-- Legend overlay -->
+    <div style="position:absolute;top:16px;right:20px;z-index:10;display:flex;flex-direction:column;gap:6px;pointer-events:none;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#4a9eff;box-shadow:0 0 8px #4a9eff;"></span> Brain A</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;box-shadow:0 0 8px #f59e0b;"></span> Brain B</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;"></span> Recall Agents</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#8b5cf6;box-shadow:0 0 8px #8b5cf6;"></span> Observer Agents</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#06b6d4;box-shadow:0 0 8px #06b6d4;"></span> Embedding Layer</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#f43f5e;box-shadow:0 0 8px #f43f5e;"></span> Vault / Graph</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);"><span style="width:10px;height:10px;border-radius:50%;background:#ffffff;box-shadow:0 0 8px #ffffff;"></span> Gate / Scouts</div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const canvas = document.getElementById('brainCanvas');
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let W, H, t = 0, mouse = {x: -1000, y: -1000};
+
+    function resize(){
+      const r = canvas.parentElement.getBoundingClientRect();
+      W = r.width; H = r.height;
+      canvas.width = W * devicePixelRatio;
+      canvas.height = H * devicePixelRatio;
+      canvas.style.width = W+'px';
+      canvas.style.height = H+'px';
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    }
+
+    canvas.parentElement.addEventListener('mousemove', e => {
+      const r = canvas.parentElement.getBoundingClientRect();
+      mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
+    });
+    canvas.parentElement.addEventListener('mouseleave', () => { mouse.x = -1000; mouse.y = -1000; });
+
+    // Colors
+    const BRAIN_A = '#4a9eff', BRAIN_B = '#f59e0b', RECALL = '#10b981', OBSERVER = '#8b5cf6',
+          EMBED = '#06b6d4', VAULT = '#f43f5e', DIM = 'rgba(255,255,255,0.04)';
+
+    // Brain sphere nodes (vault data points orbiting each brain)
+    class BrainNode {
+      constructor(cx, cy, orbitR, angle, speed, color, label, size){
+        this.cx=cx; this.cy=cy; this.orbitR=orbitR; this.angle=angle; this.speed=speed;
+        this.color=color; this.label=label; this.size=size||3;
+        this.tiltX = 0.3 + Math.random()*0.4;
+        this.tiltY = 0.2 + Math.random()*0.5;
+        this.phase = Math.random()*Math.PI*2;
+      }
+      pos(t){
+        const a = this.angle + t * this.speed;
+        return {
+          x: this.cx + Math.cos(a) * this.orbitR * this.tiltX + Math.sin(a*0.7+this.phase)*this.orbitR*0.15,
+          y: this.cy + Math.sin(a) * this.orbitR * this.tiltY + Math.cos(a*0.5+this.phase)*this.orbitR*0.1,
+        };
+      }
+    }
+
+    // Agent packet that moves between two points
+    class AgentPacket {
+      constructor(fromFn, toFn, color, speed, label, trailLen){
+        this.fromFn=fromFn; this.toFn=toFn; this.color=color; this.speed=speed;
+        this.label=label; this.trailLen=trailLen||12;
+        this.progress=Math.random(); this.dir=1;
+        this.trail=[];
+      }
+      update(){
+        this.progress += this.speed * this.dir;
+        if(this.progress > 1){ this.progress=1; this.dir=-1; }
+        if(this.progress < 0){ this.progress=0; this.dir=1; }
+        const f=this.fromFn(), to=this.toFn();
+        const x = f.x + (to.x-f.x)*this.progress;
+        const y = f.y + (to.y-f.y)*this.progress;
+        this.trail.push({x,y});
+        if(this.trail.length>this.trailLen) this.trail.shift();
+        return {x,y};
+      }
+    }
+
+    let brainA, brainB, nodesA=[], nodesB=[], embedNode, vaultNode, packets=[];
+    const vaultLabels = ['inbox','daily','decisions','patterns','projects','entities','stories','maps'];
+    const agentsA = ['Facts','Context','Temporal'];
+    const agentsB = ['Facts','Context','Temporal'];
+
+    function buildScene(){
+      const cx = W/2, cy = H*0.38;
+      const brainSep = Math.min(W*0.32, 300);
+
+      brainA = {x: cx - brainSep, y: cy, r: Math.min(W*0.16, 130), color: BRAIN_A, label:'Brain A'};
+      brainB = {x: cx + brainSep, y: cy, r: Math.min(W*0.16, 130), color: BRAIN_B, label:'Brain B'};
+
+      // Vault data points orbiting each brain
+      nodesA=[]; nodesB=[];
+      for(let i=0;i<vaultLabels.length;i++){
+        const a = (i/vaultLabels.length)*Math.PI*2;
+        nodesA.push(new BrainNode(brainA.x, brainA.y, brainA.r*1.55, a, 0.003+Math.random()*0.004, BRAIN_A, vaultLabels[i], 4+Math.random()*3));
+        nodesB.push(new BrainNode(brainB.x, brainB.y, brainB.r*1.55, a+0.5, 0.003+Math.random()*0.004, BRAIN_B, vaultLabels[i], 4+Math.random()*3));
+      }
+      // Extra faded data points
+      for(let i=0;i<20;i++){
+        nodesA.push(new BrainNode(brainA.x, brainA.y, brainA.r*(1.15+Math.random()*1.1), Math.random()*Math.PI*2, 0.002+Math.random()*0.005, BRAIN_A, '', 1.5+Math.random()*2));
+        nodesB.push(new BrainNode(brainB.x, brainB.y, brainB.r*(1.15+Math.random()*1.1), Math.random()*Math.PI*2, 0.002+Math.random()*0.005, BRAIN_B, '', 1.5+Math.random()*2));
+      }
+
+      // Embed and vault nodes
+      embedNode = {x: cx, y: cy + Math.min(H*0.22, 190), color: EMBED, label:'Embedding Layer', r:26};
+      vaultNode = {x: cx, y: cy - Math.min(H*0.24, 210), color: VAULT, label:'Knowledge Graph Vault', r:24};
+
+      // Agent packets moving between brains and systems
+      packets=[];
+      const getBrainA = ()=>({x:brainA.x, y:brainA.y});
+      const getBrainB = ()=>({x:brainB.x, y:brainB.y});
+      const getEmbed = ()=>({x:embedNode.x, y:embedNode.y});
+      const getVault = ()=>({x:vaultNode.x, y:vaultNode.y});
+
+      // Recall agents: brain <-> embed
+      for(let i=0;i<3;i++){
+        packets.push(new AgentPacket(getBrainA, getEmbed, RECALL, 0.004+i*0.001, agentsA[i]+' Recall', 15));
+        packets.push(new AgentPacket(getBrainB, getEmbed, RECALL, 0.004+i*0.001, agentsB[i]+' Recall', 15));
+      }
+      // Observer agents: brain <-> vault
+      for(let i=0;i<3;i++){
+        packets.push(new AgentPacket(getBrainA, getVault, OBSERVER, 0.003+i*0.001, 'Observer', 18));
+        packets.push(new AgentPacket(getBrainB, getVault, OBSERVER, 0.003+i*0.001, 'Observer', 18));
+      }
+      // Embed <-> Vault data sync
+      packets.push(new AgentPacket(getEmbed, getVault, EMBED, 0.005, 'Index', 10));
+      packets.push(new AgentPacket(getVault, getEmbed, VAULT, 0.004, 'Retrieve', 10));
+      // Cross-brain handoff (rare, slow)
+      packets.push(new AgentPacket(getBrainA, getBrainB, 'rgba(255,255,255,0.5)', 0.002, 'Handoff', 20));
+      // Context scouts — white packets bouncing between brains, embed, and vault (fast, shared)
+      const SCOUT = '#ffffff';
+      packets.push(new AgentPacket(getBrainA, getEmbed, SCOUT, 0.006, 'Gate', 8));
+      packets.push(new AgentPacket(getBrainB, getEmbed, SCOUT, 0.006, 'Gate', 8));
+      packets.push(new AgentPacket(getEmbed, getBrainA, SCOUT, 0.005, 'Scout', 10));
+      packets.push(new AgentPacket(getEmbed, getBrainB, SCOUT, 0.005, 'Scout', 10));
+      packets.push(new AgentPacket(getVault, getBrainA, SCOUT, 0.005, 'Scout', 10));
+      packets.push(new AgentPacket(getVault, getBrainB, SCOUT, 0.005, 'Scout', 10));
+    }
+
+    function drawBrain(brain, time){
+      const {x,y,r,color,label}=brain;
+      // Outer glow rings
+      for(let i=3;i>=0;i--){
+        const rr = r + i*12 + Math.sin(time*0.02+i)*4;
+        ctx.beginPath();
+        ctx.arc(x,y,rr,0,Math.PI*2);
+        ctx.strokeStyle = color.replace(')',`,${0.04-i*0.008})`).replace('#',`rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${0.06-i*0.012})`);
+        // simpler approach:
+        ctx.globalAlpha = 0.06 - i*0.012;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // Core sphere gradient
+      const grad = ctx.createRadialGradient(x-r*0.3, y-r*0.3, r*0.1, x, y, r);
+      grad.addColorStop(0, color+'40');
+      grad.addColorStop(0.6, color+'15');
+      grad.addColorStop(1, color+'05');
+      ctx.beginPath();
+      ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Wireframe sphere lines
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 0.5;
+      // Latitude lines
+      for(let i=-2;i<=2;i++){
+        const yOff = i * r * 0.3;
+        const rr = Math.sqrt(Math.max(0, r*r - yOff*yOff));
+        ctx.beginPath();
+        ctx.ellipse(x, y+yOff, rr, rr*0.15, 0, 0, Math.PI*2);
+        ctx.stroke();
+      }
+      // Longitude lines
+      for(let i=0;i<4;i++){
+        const angle = (i/4)*Math.PI + time*0.005;
+        ctx.beginPath();
+        ctx.ellipse(x, y, Math.abs(Math.cos(angle))*r, r, 0, 0, Math.PI*2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Neural network interior lines
+      ctx.save();
+      ctx.globalAlpha = 0.08;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 0.5;
+      const seed = label === 'Brain A' ? 42 : 137;
+      for(let i=0;i<12;i++){
+        const a1 = (seed+i*73)%360 * Math.PI/180 + time*0.003;
+        const a2 = (seed+i*131)%360 * Math.PI/180 - time*0.002;
+        const r1 = r*0.3 + (i%3)*r*0.2;
+        const r2 = r*0.2 + ((i+1)%4)*r*0.15;
+        ctx.beginPath();
+        ctx.moveTo(x+Math.cos(a1)*r1, y+Math.sin(a1)*r1*0.6);
+        ctx.lineTo(x+Math.cos(a2)*r2, y+Math.sin(a2)*r2*0.7);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Bright specular highlight
+      const specGrad = ctx.createRadialGradient(x-r*0.25, y-r*0.3, 0, x-r*0.25, y-r*0.3, r*0.5);
+      specGrad.addColorStop(0, 'rgba(255,255,255,0.12)');
+      specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.beginPath();
+      ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle = specGrad;
+      ctx.fill();
+
+      // Label
+      ctx.font = '700 18px Inter, sans-serif';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.9;
+      ctx.fillText(label, x, y + r + 28);
+      ctx.font = '12px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillText(label==='Brain A'?'Primary Assistant':'Secondary Assistant', x, y+r+44);
+      ctx.globalAlpha = 1;
+    }
+
+    function drawSystemNode(node, time){
+      const {x,y,r,color,label}=node;
+      // Glow
+      ctx.beginPath();
+      ctx.arc(x,y,r+8,0,Math.PI*2);
+      ctx.fillStyle = color+'15';
+      ctx.fill();
+      // Ring
+      ctx.beginPath();
+      ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.strokeStyle = color+'60';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = color+'20';
+      ctx.fill();
+      // Spinning arc
+      const sa = time*0.03;
+      ctx.beginPath();
+      ctx.arc(x,y,r+3,sa,sa+Math.PI*0.6);
+      ctx.strokeStyle = color+'80';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Label
+      ctx.font = '600 13px Inter, sans-serif';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x, y+r+22);
+    }
+
+    function drawNodes(nodes, time){
+      for(const n of nodes){
+        const p = n.pos(time);
+        const dist = Math.sqrt((p.x-mouse.x)**2+(p.y-mouse.y)**2);
+        const hover = dist < 30;
+        const alpha = n.label ? 0.6 : 0.15;
+        // Connection line to brain center
+        ctx.beginPath();
+        ctx.moveTo(n.cx, n.cy);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = n.color + (n.label?'08':'04');
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        // Node dot
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, hover?n.size+2:n.size, 0, Math.PI*2);
+        ctx.fillStyle = n.color;
+        ctx.globalAlpha = hover ? 0.9 : alpha;
+        ctx.fill();
+        if(hover && n.label){
+          ctx.globalAlpha = 1;
+          ctx.shadowColor = n.color;
+          ctx.shadowBlur = 12;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1;
+        // Label on hover
+        if(n.label && (hover || n.size > 4)){
+          ctx.font = '11px Inter, sans-serif';
+          ctx.fillStyle = 'rgba(255,255,255,'+(hover?0.9:0.45)+')';
+          ctx.textAlign = 'center';
+          ctx.fillText(n.label, p.x, p.y - n.size - 7);
+        }
+      }
+    }
+
+    function drawPackets(time){
+      for(const p of packets){
+        const pos = p.update();
+        // Trail
+        for(let i=0;i<p.trail.length;i++){
+          const t = p.trail[i];
+          const alpha = (i/p.trail.length)*0.5;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, 2.5, 0, Math.PI*2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        // Head
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 4.5, 0, Math.PI*2);
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function drawConnectionLines(){
+      const pts = [brainA, brainB, embedNode, vaultNode];
+      // Draw subtle connection lines between all major nodes
+      const connections = [
+        [brainA, embedNode], [brainB, embedNode],
+        [brainA, vaultNode], [brainB, vaultNode],
+        [embedNode, vaultNode],
+        [brainA, brainB],
+      ];
+      for(const [a,b] of connections){
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        // Curved line
+        const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+        const dx = b.x-a.x, dy = b.y-a.y;
+        const cx = mx + dy*0.15, cy = my - dx*0.15;
+        ctx.quadraticCurveTo(cx, cy, b.x, b.y);
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // Model labels floating near brains
+    function drawModelLabels(time){
+      ctx.font = '500 11px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+
+      // GPT-5.4 near each brain
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillText('GPT-5.4', brainA.x, brainA.y - brainA.r - 10);
+      ctx.fillText('GPT-5.4', brainB.x, brainB.y - brainB.r - 10);
+
+      // Helper: keep text right-side-up by flipping angles past horizontal
+      function readableAngle(a) {
+        if (a > Math.PI/2) return a - Math.PI;
+        if (a < -Math.PI/2) return a + Math.PI;
+        return a;
+      }
+
+      // Recall Spark labels — diagonal between each brain and embed node (green, faded)
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = RECALL;
+      ctx.font = '600 11px JetBrains Mono, monospace';
+      // Brain A -> Embed
+      const brainAEmbedMx = (brainA.x + embedNode.x) / 2;
+      const brainAEmbedMy = (brainA.y + embedNode.y) / 2;
+      const brainAEmbedAngle = readableAngle(Math.atan2(embedNode.y - brainA.y, embedNode.x - brainA.x));
+      ctx.translate(brainAEmbedMx, brainAEmbedMy);
+      ctx.rotate(brainAEmbedAngle);
+      ctx.fillText('Codex Spark', 0, -8);
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+      // Brain B -> Embed
+      const brainBEmbedMx = (brainB.x + embedNode.x) / 2;
+      const brainBEmbedMy = (brainB.y + embedNode.y) / 2;
+      const brainBEmbedAngle = readableAngle(Math.atan2(embedNode.y - brainB.y, embedNode.x - brainB.x));
+      ctx.translate(brainBEmbedMx, brainBEmbedMy);
+      ctx.rotate(brainBEmbedAngle);
+      ctx.fillText('Codex Spark', 0, -8);
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+      ctx.restore();
+
+      // Observer Spark labels — diagonal between each brain and vault node (purple, faded)
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = OBSERVER;
+      ctx.font = '600 11px JetBrains Mono, monospace';
+      // Brain A -> Vault
+      const brainAVaultMx = (brainA.x + vaultNode.x) / 2;
+      const brainAVaultMy = (brainA.y + vaultNode.y) / 2;
+      const brainAVaultAngle = readableAngle(Math.atan2(vaultNode.y - brainA.y, vaultNode.x - brainA.x));
+      ctx.translate(brainAVaultMx, brainAVaultMy);
+      ctx.rotate(brainAVaultAngle);
+      ctx.fillText('Codex Spark', 0, -8);
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+      // Brain B -> Vault
+      const brainBVaultMx = (brainB.x + vaultNode.x) / 2;
+      const brainBVaultMy = (brainB.y + vaultNode.y) / 2;
+      const brainBVaultAngle = readableAngle(Math.atan2(vaultNode.y - brainB.y, vaultNode.x - brainB.x));
+      ctx.translate(brainBVaultMx, brainBVaultMy);
+      ctx.rotate(brainBVaultAngle);
+      ctx.fillText('Codex Spark', 0, -8);
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+      ctx.restore();
+
+      // Handoff label centered between the two brains
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '500 10px JetBrains Mono, monospace';
+      ctx.fillText('Handoff', (brainA.x + brainB.x) / 2, brainA.y + 4);
+      ctx.globalAlpha = 1;
+
+      // Qdrant + SQLite near embed
+      ctx.fillStyle = EMBED+'60';
+      ctx.fillText('Qdrant + SQLite', embedNode.x, embedNode.y + embedNode.r + 40);
+
+      // Obsidian-style near vault
+      ctx.fillStyle = VAULT+'60';
+      ctx.fillText('Markdown Vault', vaultNode.x, vaultNode.y - vaultNode.r - 12);
+    }
+
+    // Background particles
+    let particles = [];
+    function initParticles(){
+      particles=[];
+      for(let i=0;i<60;i++){
+        particles.push({
+          x: Math.random()*W, y: Math.random()*H,
+          vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3,
+          size: 0.5+Math.random()*1.5,
+          alpha: 0.05+Math.random()*0.1,
+        });
+      }
+    }
+
+    function drawParticles(){
+      for(const p of particles){
+        p.x += p.vx; p.y += p.vy;
+        if(p.x<0) p.x=W; if(p.x>W) p.x=0;
+        if(p.y<0) p.y=H; if(p.y>H) p.y=0;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,'+p.alpha+')';
+        ctx.fill();
+      }
+    }
+
+    function draw(){
+      t++;
+      ctx.clearRect(0,0,W,H);
+
+      // Background gradient
+      const bgGrad = ctx.createRadialGradient(W/2, H*0.38, 0, W/2, H*0.38, Math.max(W,H)*0.7);
+      bgGrad.addColorStop(0, '#0f0f1a');
+      bgGrad.addColorStop(1, '#0a0a0f');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0,0,W,H);
+
+      drawParticles();
+      drawConnectionLines();
+      drawNodes(nodesA, t);
+      drawNodes(nodesB, t);
+      drawPackets(t);
+      drawBrain(brainA, t);
+      drawBrain(brainB, t);
+      drawSystemNode(embedNode, t);
+      drawSystemNode(vaultNode, t);
+      drawModelLabels(t);
+
+      requestAnimationFrame(draw);
+    }
+
+    function init(){
+      resize();
+      buildScene();
+      initParticles();
+      draw();
+    }
+
+    window.addEventListener('resize', ()=>{ resize(); buildScene(); initParticles(); });
+    init();
+  })();
+  </script>
+
+  <!-- Stats -->
+  <div class="stats-strip">
+    <div class="stat-box"><div class="stat-value">15</div><div class="stat-label">Specialized Agents</div></div>
+    <div class="stat-box"><div class="stat-value">4</div><div class="stat-label">Memory Layers</div></div>
+    <div class="stat-box"><div class="stat-value">2</div><div class="stat-label">Isolated Brains</div></div>
+    <div class="stat-box"><div class="stat-value">0ms</div><div class="stat-label">Context Recall</div></div>
+    <div class="stat-box"><div class="stat-value">&lt;22s</div><div class="stat-label">Deep Recall</div></div>
+    <div class="stat-box"><div class="stat-value">15m</div><div class="stat-label">Observer Interval</div></div>
+  </div>
+
+  <!-- ===== SECTION: Core Architecture ===== -->
+  <div class="section-header">
+    <h2>System Architecture</h2>
+    <p>Five layers working together &mdash; from user conversation to durable knowledge</p>
+  </div>
+
+  <div class="layers">
+    <div class="layer l1">
+      <div class="layer-label">Conversation<br>Layer</div>
+      <div class="layer-content">
+        <div class="layer-item">User messages</div>
+        <div class="layer-item">Brain A (Primary Assistant)</div>
+        <div class="layer-item">Brain B (Secondary Assistant)</div>
+        <div class="layer-item">Explicit "remember this" triggers</div>
+      </div>
+    </div>
+    <div class="layer l2">
+      <div class="layer-label">Context<br>Layer</div>
+      <div class="layer-content">
+        <div class="layer-item">Memory Gate (classifies every turn)</div>
+        <div class="layer-item">2x Context Scouts (pre-stage between turns)</div>
+        <div class="layer-item">Staged Context Buffer (0ms injection)</div>
+        <div class="layer-item">none / light / deep classification</div>
+      </div>
+    </div>
+    <div class="layer l3">
+      <div class="layer-label">Agent<br>Orchestration</div>
+      <div class="layer-content">
+        <div class="layer-item">3x Recall Agents (deep, on-demand)</div>
+        <div class="layer-item">3x Observer Agents (every 15min)</div>
+        <div class="layer-item">Parallel execution via ThreadPool</div>
+        <div class="layer-item">All on Codex Spark, xhigh reasoning</div>
+      </div>
+    </div>
+    <div class="layer l4">
+      <div class="layer-label">Embedding<br>Layer</div>
+      <div class="layer-content">
+        <div class="layer-item">MLX embedding servers (per-brain)</div>
+        <div class="layer-item">4096-dim vectors</div>
+        <div class="layer-item">Cosine similarity search</div>
+        <div class="layer-item">Qdrant vector index</div>
+      </div>
+    </div>
+    <div class="layer l5">
+      <div class="layer-label">Persistence<br>Layer</div>
+      <div class="layer-content">
+        <div class="layer-item">SQLite memory store</div>
+        <div class="layer-item">Graph notes (markdown + frontmatter)</div>
+        <div class="layer-item">Graph event pipeline</div>
+        <div class="layer-item">Session state (last 80 messages)</div>
+      </div>
+    </div>
+    <div class="layer l6">
+      <div class="layer-label">Knowledge<br>Graph</div>
+      <div class="layer-content">
+        <div class="layer-item">Vault folders (Obsidian-style)</div>
+        <div class="layer-item">Note links &amp; relationships</div>
+        <div class="layer-item">AGENT.md operating contracts</div>
+        <div class="layer-item">MEMORY.md active routers</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: The Three Memory Modes ===== -->
+  <div class="section-header">
+    <h2>Three Memory Modes</h2>
+    <p>Passive storage, active observation, and intelligent multi-perspective recall</p>
+  </div>
+
+  <!-- Mode 1: Passive -->
+  <div class="flow-diagram">
+    <h3 style="color: var(--accent-blue); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">Mode 1 &mdash; Passive Memory</h3>
+    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 20px;">User explicitly tells the assistant to remember something. Stored immediately with embedding.</p>
+    <div class="data-path">
+      <div class="flow-node"><div class="label blue">User</div><div class="desc">"Remember this..."</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet blue" style="animation-delay: 0s;"></div></div></div>
+      <div class="flow-node"><div class="label purple">Intent Detection</div><div class="desc">REMEMBER_PREFIXES match</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet purple" style="animation-delay: 0.3s;"></div></div></div>
+      <div class="flow-node"><div class="label amber">Embedding</div><div class="desc">MLX 4096-dim vector</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet amber" style="animation-delay: 0.6s;"></div></div></div>
+      <div class="flow-node"><div class="label green">Storage</div><div class="desc">SQLite + Qdrant + Vault</div></div>
+    </div>
+  </div>
+
+  <!-- Mode 2: Observer -->
+  <div class="flow-diagram">
+    <h3 style="color: var(--accent-amber); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">Mode 2 &mdash; Active Observation</h3>
+    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 20px;">Three parallel agents automatically scan sessions every 15 minutes, extracting facts, patterns, and relationships the user didn't explicitly ask to save.</p>
+    <div class="data-path">
+      <div class="flow-node"><div class="label amber">Timer</div><div class="desc">Every 15 min</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet amber" style="animation-delay: 0s;"></div></div></div>
+      <div class="flow-node"><div class="label purple">Session Check</div><div class="desc">Active? New msgs?</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet purple" style="animation-delay: 0.4s;"></div></div></div>
+      <div class="flow-node"><div class="label blue">3x Spark Agents</div><div class="desc">Parallel observer scan</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet green" style="animation-delay: 0.8s;"></div></div></div>
+      <div class="flow-node"><div class="label green">Dedup &amp; Store</div><div class="desc">Check existing, persist new</div></div>
+    </div>
+    <div class="agent-trio" style="margin-top: 24px;">
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-blue);">&#x1F441;&#xFE0F;</div>
+          <div class="agent-name">Fact Observer</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Extracts explicit facts, preferences, decisions, commitments, names, numbers, and deadlines from user messages.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">observer_read_session</span>
+          <span class="tool-tag">observer_store_memory</span>
+          <span class="tool-tag">observer_check_existing</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-purple);">&#x1F504;</div>
+          <div class="agent-name">Pattern Observer</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Detects behavioral patterns, recurring themes, workflow habits, and work style indicators across conversation.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">observer_read_session</span>
+          <span class="tool-tag">observer_store_memory</span>
+          <span class="tool-tag">observer_check_existing</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-amber);">&#x1F91D;</div>
+          <div class="agent-name">Relationship Observer</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Tracks people mentions, relationship dynamics, sentiment shifts, and social context in the conversation.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">observer_read_session</span>
+          <span class="tool-tag">observer_store_memory</span>
+          <span class="tool-tag">observer_check_existing</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode 3: Recall -->
+  <div class="flow-diagram">
+    <h3 style="color: var(--accent-purple); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">Mode 3 &mdash; Deep Recall</h3>
+    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 20px;">When the user asks "what do you remember about X," three parallel agents search memory from different perspectives &mdash; facts, context, and temporal &mdash; then merge their findings into a unified recall.</p>
+    <div class="data-path">
+      <div class="flow-node"><div class="label blue">User</div><div class="desc">"What do you remember..."</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet blue" style="animation-delay: 0s;"></div></div></div>
+      <div class="flow-node"><div class="label purple">3x Spark Agents</div><div class="desc">Parallel recall search</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet purple" style="animation-delay: 0.5s;"></div></div></div>
+      <div class="flow-node"><div class="label amber">Merge &amp; Rank</div><div class="desc">Dedup, score, top-8</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet green" style="animation-delay: 1s;"></div></div></div>
+      <div class="flow-node"><div class="label green">Context Inject</div><div class="desc">Into parent agent</div></div>
+    </div>
+    <div class="agent-trio" style="margin-top: 24px;">
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-blue);">&#x1F50D;</div>
+          <div class="agent-name">Facts Recall</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Searches for explicit statements, preferences, decisions, names, numbers. Keyword-focused, literal matching against the memory store and vault.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">recall_search_memories</span>
+          <span class="tool-tag">recall_read_vault</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-purple);">&#x1F4AC;</div>
+          <div class="agent-name">Context Recall</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Reads between the lines: implied context, tone shifts, social cues, what was left unsaid. Pulls surrounding session messages for evidence.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">recall_search_memories</span>
+          <span class="tool-tag">recall_scan_sessions</span>
+          <span class="tool-tag">recall_search_graph</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: var(--glow-amber);">&#x23F3;</div>
+          <div class="agent-name">Temporal Recall</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Reconstructs timelines, detects recurring patterns, tracks escalation. Uses date-range queries and frequency analysis across the full memory.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">recall_search_memories</span>
+          <span class="tool-tag">recall_search_graph</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode 4: Context System -->
+  <div class="flow-diagram">
+    <h3 style="color: var(--accent-indigo); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">Mode 4 &mdash; Context Recall</h3>
+    <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 20px;">A Memory Gate classifies every inbound message, while Context Scouts pre-stage intelligent memory between turns. The next turn gets pre-fetched context at zero latency.</p>
+    <div class="data-path">
+      <div class="flow-node"><div class="label blue">Message In</div><div class="desc">Every turn</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet blue" style="animation-delay: 0s;"></div></div></div>
+      <div class="flow-node"><div class="label purple">Memory Gate</div><div class="desc">none / light / deep</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet purple" style="animation-delay: 0.4s;"></div></div></div>
+      <div class="flow-node"><div class="label green">Staged Buffer</div><div class="desc">Pre-fetched context</div></div>
+      <div class="flow-arrow"><div class="arrow-line"><div class="packet green" style="animation-delay: 0.8s;"></div></div></div>
+      <div class="flow-node"><div class="label amber">0ms Inject</div><div class="desc">Into next turn</div></div>
+    </div>
+    <div class="agent-trio" style="margin-top: 24px;">
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: rgba(99,102,241,0.15);">&#x26A1;</div>
+          <div class="agent-name">Memory Gate</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Classifies every inbound message: <strong>none</strong> (skip memory), <strong>light</strong> (embeddings enough), or <strong>deep</strong> (trigger full 3-agent recall). Runs in parallel, no tools needed. ~3-5 seconds.</div>
+        <div class="agent-tools">
+          <span class="tool-tag" style="background:rgba(99,102,241,0.1);color:var(--accent-indigo);border-color:rgba(99,102,241,0.15);">no tools &mdash; pure classification</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: rgba(99,102,241,0.15);">&#x1F52E;</div>
+          <div class="agent-name">Topic Trajectory Scout</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Runs after each response in background. Reads recent messages, predicts upcoming topics, pre-fetches relevant memories into the staged buffer.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">recall_search_memories</span>
+          <span class="tool-tag">recall_scan_sessions</span>
+        </div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-header">
+          <div class="agent-icon" style="background: rgba(99,102,241,0.15);">&#x1F3AF;</div>
+          <div class="agent-name">Relevance Scorer Scout</div>
+          <div class="agent-model">Spark</div>
+        </div>
+        <div class="agent-desc">Runs after each response in background. Scores memory results for genuine relevance, filters false positives, surfaces memories the embedding search missed.</div>
+        <div class="agent-tools">
+          <span class="tool-tag">recall_search_memories</span>
+          <span class="tool-tag">recall_search_graph</span>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top: 20px; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px;">
+      <p style="color: var(--text-dim); font-size: 13px; line-height: 1.6;"><strong style="color: var(--accent-indigo);">How it works:</strong> The scouts do their work during dead time &mdash; while the user reads the response and types their next message. By the time the next message arrives, intelligent context is already staged. The gate runs in parallel with the response so it adds zero user-facing latency. If the gate classifies "deep," the full 3-agent recall fires and its results feed into the next turn.</p>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: Dual Brain ===== -->
+  <div class="section-header">
+    <h2>Dual Brain Isolation</h2>
+    <p>Two completely separate memory stores connected only through explicit handoff artifacts</p>
+  </div>
+
+  <div class="arch-flow">
+    <div class="arch-row">
+      <div class="card blue brain-card">
+        <div class="card-icon blue">&#x1F4CB;</div>
+        <h3>Brain A</h3>
+        <p style="margin-bottom: 8px;">An individualized chatbot with its own isolated memory, personality, and context. Configurable for any role or domain. Has its own isolated memory, personality, and context.</p>
+      </div>
+      <div class="card purple brain-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 180px;">
+        <div style="font-size: 24px; margin-bottom: 8px;">&#x1F91D;</div>
+        <h3 style="text-align: center;">Handoff Protocol</h3>
+        <p style="text-align: center; font-size: 11px;">Explicit artifacts with<br>provenance &amp; audit trail</p>
+      </div>
+      <div class="card amber brain-card">
+        <div class="card-icon amber">&#x1F399;&#xFE0F;</div>
+        <h3>Brain B</h3>
+        <p style="margin-bottom: 8px;">An individualized producer chatbot. Manages show preparation, editorial decisions, story analysis, and content production. Completely separate memory and context from Brain A.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin: 20px 0;">
+    <p style="color: var(--text-dim); font-size: 13px; max-width: 700px; margin: 0 auto; line-height: 1.6;">Each brain is a fully independent chatbot with its own database, vector index, embedding server, vault, and 6 dedicated agents (3 recall + 3 observer). Three additional shared agents (Memory Gate + 2 Context Scouts) serve both brains. Cross-brain information transfer only happens through the handoff protocol with full provenance tracking. You can add as many brains as you need &mdash; each one is a self-contained unit.</p>
+  </div>
+
+  <!-- ===== SECTION: Knowledge Graph ===== -->
+  <div class="section-header">
+    <h2>Knowledge Graph Vault</h2>
+    <p>Obsidian-style markdown notes with frontmatter, organized into typed folders</p>
+  </div>
+
+  <div class="graph-viz" id="graphViz" style="height:750px;">
+    <canvas id="graphCanvas"></canvas>
+  </div>
+
+  <div class="tech-grid">
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F4C1;</div>
+      <div><h4>Vault Folders</h4><p>inbox/ daily/ decisions/ patterns/ projects/ entities/ stories/ maps/ &mdash; each agent owns its own folder hierarchy</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F4DD;</div>
+      <div><h4>Frontmatter</h4><p>Each note has YAML frontmatter: id, title, agent_scope, note_type, confidence, importance, review_state, memory_ids</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F517;</div>
+      <div><h4>Graph Links</h4><p>Notes are linked via graph_note_links table enabling traversal, context expansion, and relationship discovery</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F504;</div>
+      <div><h4>Event Pipeline</h4><p>Memory events flow through: enqueue &rarr; process &rarr; normalize into GraphNoteDraft &rarr; write to vault &rarr; index</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F4CA;</div>
+      <div><h4>Active Router</h4><p>MEMORY.md is auto-generated with sections: Now, Projects/Arcs, Constraints &mdash; surfacing the most relevant memories</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F50D;</div>
+      <div><h4>Hybrid Search</h4><p>Vector similarity (82%) + text matching (8%) + recency boost (5%) + importance weighting (5%) for scored retrieval</p></div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: How It Works ===== -->
+  <div class="section-header">
+    <h2>Complete Data Flow</h2>
+    <p>From conversation to durable knowledge and back again</p>
+  </div>
+
+  <div class="timeline-section">
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="tl-title">1. User speaks to a chatbot</div>
+        <div class="tl-desc">The message arrives. Any pre-staged context from the previous turn's scouts is consumed instantly. The conversation is stored in session state.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">2. Memory Gate classifies the message</div>
+        <div class="tl-desc">Immediately and in parallel, the Memory Gate agent classifies the message: none (no memory needed), light (fast embedding search is enough), or deep (trigger full multi-agent recall). Runs in ~3-5 seconds without blocking anything.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">3. Passive memory captures explicit saves</div>
+        <div class="tl-desc">If the user says "remember this," the content is embedded (4096-dim vector), stored in the database, indexed in the vector store, and a graph event is enqueued for the brain vault pipeline.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">4. Deep recall agents search in parallel (when needed)</div>
+        <div class="tl-desc">When the gate classifies "deep" or the user explicitly asks, three agents fan out simultaneously: Facts does keyword searches, Context reads session history and graph notes, Temporal does date-range queries. Results merge into a ranked payload.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">5. Context Scouts pre-stage for next turn</div>
+        <div class="tl-desc">After every response, two Scout agents spin up in background: Topic Trajectory predicts upcoming topics and pre-fetches memories; Relevance Scorer filters and refines current context. Results are staged for the next turn at 0ms latency.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-title">6. Observer agents extract memories continuously</div>
+        <div class="tl-desc">Every 15 minutes during active sessions, three observer agents scan the conversation and extract facts, patterns, and relationship dynamics into durable memory. This happens automatically without the user asking.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: Tech Stack ===== -->
+  <div class="section-header">
+    <h2>Technology Stack</h2>
+    <p>Local-first, privacy-preserving, fully self-hosted</p>
+  </div>
+
+  <div style="margin-bottom: 24px; padding: 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;">
+    <p style="color: var(--text); font-size: 14px; line-height: 1.7;"><strong style="color: var(--accent-blue);">This architecture is model-agnostic.</strong> The implementation shown here uses specific models, but the pattern works with any combination of large and small language models. You need two tiers: a <strong>primary model</strong> (any capable LLM &mdash; Claude, GPT, Gemini, Llama, Mistral, etc.) for the main chatbot agents, and a <strong>fast model</strong> (any cheap, quick model with tool-calling support) for the recall, observer, gate, and scout agents. The embedding layer can use any embedding model. The vector store can be Qdrant, Pinecone, Weaviate, pgvector, or anything that does cosine similarity. The orchestration layer can be any agent framework that supports parallel subagent spawning. The architecture is the idea &mdash; swap in whatever models and tools you have.</p>
+  </div>
+
+  <div class="tech-grid">
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F9E0;</div>
+      <div><h4>Two-Tier Model Strategy</h4><p>Any capable LLM as the primary chatbot (deep reasoning, large context). Any fast, cheap model for the 13 specialized agents (recall, observer, gate, scouts). Spend tokens where they matter.</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F50C;</div>
+      <div><h4>Agent Orchestration</h4><p>Any framework that can spawn parallel subagents with tool access. The agents need to run concurrently and return structured JSON. Any agent router or framework works.</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F4BE;</div>
+      <div><h4>Vector + Structured Storage</h4><p>Any vector database for semantic search (Qdrant, Pinecone, pgvector, FAISS) plus any structured store for metadata (SQLite, Postgres, DynamoDB). Per-brain isolation is the key.</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F310;</div>
+      <div><h4>Embedding Layer</h4><p>Any embedding model that produces consistent vectors. Can be local (MLX, Ollama, llama.cpp) or cloud (OpenAI, Cohere, Voyage). One instance per brain for isolation.</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x2699;&#xFE0F;</div>
+      <div><h4>Backend API</h4><p>Any web framework serving memory search, session state, and vault operations. Agents call the API via HTTP tools. Our implementation uses Python FastAPI, but Express, Go, or anything with REST endpoints works.</p></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">&#x1F5A5;&#xFE0F;</div>
+      <div><h4>Knowledge Graph Vault</h4><p>Markdown files with YAML frontmatter, organized in typed folders. Obsidian-compatible. Linked via a graph table for traversal. Any file-based or database-backed note system works.</p></div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: How to Build This ===== -->
+  <div class="section-header">
+    <h2>How to Build This Yourself</h2>
+    <p>The architecture is model-agnostic and framework-agnostic &mdash; here's the core pattern</p>
+  </div>
+
+  <div class="code-block">
+<span class="comment"># The core idea in pseudocode:</span>
+
+<span class="kw">def</span> <span class="fn">agentic_recall</span>(query, agent_key):
+    <span class="comment"># 1. Spin up 3 cheap, fast agents in parallel</span>
+    facts   = <span class="fn">spawn_agent</span>(<span class="str">"facts"</span>,    query, tools=[<span class="str">"search_memories"</span>, <span class="str">"read_vault"</span>])
+    context = <span class="fn">spawn_agent</span>(<span class="str">"context"</span>,  query, tools=[<span class="str">"search_memories"</span>, <span class="str">"scan_sessions"</span>, <span class="str">"search_graph"</span>])
+    temporal= <span class="fn">spawn_agent</span>(<span class="str">"temporal"</span>, query, tools=[<span class="str">"search_memories"</span>, <span class="str">"search_graph"</span>])
+
+    <span class="comment"># 2. Each agent searches with its own perspective + tools</span>
+    results = <span class="fn">parallel_run</span>([facts, context, temporal], timeout=<span class="num">90</span>)
+
+    <span class="comment"># 3. Merge, deduplicate, rank by relevance</span>
+    merged = <span class="fn">merge_results</span>(results, limit=<span class="num">8</span>)
+
+    <span class="comment"># 4. Inject into parent agent's context</span>
+    <span class="kw">return</span> <span class="fn">format_for_injection</span>(merged)
+
+
+<span class="kw">def</span> <span class="fn">observer_tick</span>(agent_key):
+    <span class="comment"># Runs every 15 minutes during active sessions</span>
+    <span class="kw">if not</span> <span class="fn">session_is_active</span>(): <span class="kw">return</span>
+
+    <span class="comment"># 1. Three observers scan recent messages</span>
+    fact_obs = <span class="fn">spawn_agent</span>(<span class="str">"observe_facts"</span>,         tools=[<span class="str">"read_session"</span>, <span class="str">"store_memory"</span>, <span class="str">"check_existing"</span>])
+    patt_obs = <span class="fn">spawn_agent</span>(<span class="str">"observe_patterns"</span>,      tools=[<span class="str">"read_session"</span>, <span class="str">"store_memory"</span>, <span class="str">"check_existing"</span>])
+    rel_obs  = <span class="fn">spawn_agent</span>(<span class="str">"observe_relationships"</span>, tools=[<span class="str">"read_session"</span>, <span class="str">"store_memory"</span>, <span class="str">"check_existing"</span>])
+
+    <span class="comment"># 2. Each checks for duplicates before storing</span>
+    <span class="fn">parallel_run</span>([fact_obs, patt_obs, rel_obs], timeout=<span class="num">60</span>)
+
+    <span class="comment"># Observations are now in the memory store for future recall</span>
+
+
+<span class="comment"># Context system — runs on every turn, zero latency</span>
+
+<span class="kw">def</span> <span class="fn">on_message_received</span>(message, agent_key):
+    <span class="comment"># 1. Memory Gate classifies in parallel (no tools, ~3s)</span>
+    gate = <span class="fn">spawn_agent</span>(<span class="str">"memory-gate"</span>, message)  <span class="comment"># returns none/light/deep</span>
+
+    <span class="comment"># 2. Check if scouts pre-staged context from last turn</span>
+    staged = <span class="fn">staged_buffer.consume</span>(agent_key)  <span class="comment"># 0ms — already computed</span>
+
+    <span class="comment"># 3. If gate says "deep", trigger full recall</span>
+    <span class="kw">if</span> gate.classification == <span class="str">"deep"</span>:
+        <span class="fn">agentic_recall</span>(message, agent_key)  <span class="comment"># 22s, results staged for next turn</span>
+
+<span class="kw">def</span> <span class="fn">after_response_sent</span>(agent_key, session_id, topic):
+    <span class="comment"># Scouts run in background while user reads + types</span>
+    trajectory = <span class="fn">spawn_agent</span>(<span class="str">"scout-trajectory"</span>, tools=[<span class="str">"search_memories"</span>, <span class="str">"scan_sessions"</span>])
+    relevance  = <span class="fn">spawn_agent</span>(<span class="str">"scout-relevance"</span>,  tools=[<span class="str">"search_memories"</span>, <span class="str">"search_graph"</span>])
+    results = <span class="fn">parallel_run</span>([trajectory, relevance])
+    <span class="fn">staged_buffer.stage</span>(agent_key, results)  <span class="comment"># ready for next turn</span>
+  </div>
+
+  <div style="margin: 30px 0;">
+    <div class="card blue" style="max-width: 800px; margin: 0 auto;">
+      <h3>Key Design Principles</h3>
+      <ul>
+        <li><strong>Agents for comprehension, embeddings for storage.</strong> Traditional memory systems embed and retrieve. This system embeds and stores, but uses agents with reasoning to <em>understand</em> what they're retrieving.</li>
+        <li><strong>Multiple perspectives beat single-pass search.</strong> A fact search, a context search, and a temporal search each find different things. The merge step combines them into something richer than any single pass.</li>
+        <li><strong>Observation fills the gaps.</strong> Users forget to say "remember this." Background observers catch what passive memory misses &mdash; patterns, relationships, and facts that matter but weren't flagged.</li>
+        <li><strong>Isolation prevents contamination.</strong> Each brain owns its own memory, embeddings, and vault. Cross-pollination only happens through explicit handoff artifacts with provenance tracking.</li>
+        <li><strong>Cheap models for recall, expensive models for reasoning.</strong> The recall, observer, gate, and scout agents run on a fast, cheap model. The parent chatbot agents run on a capable model with deep reasoning. You spend tokens where they matter.</li>
+        <li><strong>Graceful degradation.</strong> If all three recall agents fail, the system falls back to traditional embedding search. Memory never blocks conversation.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="logo-text">Open Agentic Memory Architecture</div>
+    <p>15 specialized agents &middot; 4 memory modes &middot; 2 isolated brains &middot; 0ms context recall</p>
+    <p style="margin-top: 8px; font-size: 12px;">An open, model-agnostic architecture for multi-agent memory. Use any LLM, any vector store, any framework.</p>
+  </div>
+
+</div>
+
+<!-- Knowledge Graph Vault Sphere Animation -->
+<script>
+(function() {
+  const canvas = document.getElementById('graphCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, t = 0;
+
+  const SPHERE_COLOR = '#1a2a4a';
+  const SPHERE_EDGE = '#2a4a7a';
+
+  // Vault folder nodes — slow, well-spread orbits with unique tilt planes
+  const vaultItems = [
+    // Core vault folders — spread evenly using golden angle, outer shell
+    { label: 'inbox',       color: '#4a9eff', orbit: 0.85, speed: 0.0005, angle: 0.0,   tiltX: 1.0, tiltY: 0.95, size: 5 },
+    { label: 'daily',       color: '#4a9eff', orbit: 0.82, speed: 0.0005, angle: 0.79,  tiltX: 0.95, tiltY: 1.0, size: 5 },
+    { label: 'decisions',   color: '#8b5cf6', orbit: 0.88, speed: 0.0004, angle: 1.57,  tiltX: 1.0, tiltY: 0.90, size: 5 },
+    { label: 'patterns',    color: '#8b5cf6', orbit: 0.80, speed: 0.0006, angle: 2.36,  tiltX: 0.90, tiltY: 1.0, size: 5 },
+    { label: 'projects',    color: '#f59e0b', orbit: 0.90, speed: 0.0004, angle: 3.14,  tiltX: 1.0, tiltY: 0.92, size: 5 },
+    { label: 'entities',    color: '#10b981', orbit: 0.78, speed: 0.0006, angle: 3.93,  tiltX: 0.92, tiltY: 1.0, size: 5 },
+    { label: 'stories',     color: '#f43f5e', orbit: 0.86, speed: 0.0005, angle: 4.71,  tiltX: 1.0, tiltY: 0.88, size: 5 },
+    { label: 'maps',        color: '#06b6d4', orbit: 0.83, speed: 0.0005, angle: 5.50,  tiltX: 0.88, tiltY: 1.0, size: 5 },
+    // Core pillars — square formation in center, very slow wobble
+    { label: 'MEMORY',      color: '#ffffff', orbit: 0.22, speed: 0.0003, angle: 0.78,  tiltX: 1.0, tiltY: 1.0, size: 9, bold: true },  // top-right
+    { label: 'AGENT',       color: '#ffffff', orbit: 0.22, speed: 0.0003, angle: 2.36,  tiltX: 1.0, tiltY: 1.0, size: 9, bold: true },  // top-left
+    { label: 'IDENTITY',    color: '#ffffff', orbit: 0.22, speed: 0.0003, angle: 3.93,  tiltX: 1.0, tiltY: 1.0, size: 9, bold: true },  // bottom-left
+    { label: 'TOOLS',       color: '#ffffff', orbit: 0.22, speed: 0.0003, angle: 5.50,  tiltX: 1.0, tiltY: 1.0, size: 9, bold: true },  // bottom-right
+    // Memory content — mid shell, golden-angle spacing (2.4 rad apart), gentle wobble
+    { label: 'preferences',       color: '#4a9eff', orbit: 0.62, speed: 0.0004, angle: 0.40,  tiltX: 1.0, tiltY: 0.95, size: 4 },
+    { label: 'yesterday',         color: '#4a9eff', orbit: 0.58, speed: 0.0004, angle: 1.20,  tiltX: 0.95, tiltY: 1.0, size: 4 },
+    { label: 'commitments',       color: '#8b5cf6', orbit: 0.66, speed: 0.0004, angle: 2.00,  tiltX: 1.0, tiltY: 0.92, size: 4 },
+    { label: 'deadlines',         color: '#f43f5e', orbit: 0.55, speed: 0.0005, angle: 2.80,  tiltX: 0.92, tiltY: 1.0, size: 4 },
+    { label: 'contacts',          color: '#10b981', orbit: 0.70, speed: 0.0004, angle: 3.60,  tiltX: 1.0, tiltY: 0.88, size: 4 },
+    { label: 'workflows',         color: '#f59e0b', orbit: 0.60, speed: 0.0005, angle: 4.40,  tiltX: 0.88, tiltY: 1.0, size: 4 },
+    { label: 'meeting-notes',     color: '#06b6d4', orbit: 0.64, speed: 0.0004, angle: 5.20,  tiltX: 1.0, tiltY: 0.90, size: 4 },
+    { label: 'tone-context',      color: '#8b5cf6', orbit: 0.52, speed: 0.0005, angle: 5.90,  tiltX: 0.90, tiltY: 1.0, size: 3.5 },
+    // Inner-mid shell
+    { label: 'recurring-themes',  color: '#f59e0b', orbit: 0.48, speed: 0.0004, angle: 0.80,  tiltX: 1.0, tiltY: 0.95, size: 3.5 },
+    { label: 'relationship-map',  color: '#10b981', orbit: 0.68, speed: 0.0003, angle: 1.60,  tiltX: 0.95, tiltY: 1.0, size: 3.5 },
+    { label: 'schedule-rhythm',   color: '#4a9eff', orbit: 0.45, speed: 0.0005, angle: 2.40,  tiltX: 1.0, tiltY: 0.90, size: 3.5 },
+    { label: 'project-status',    color: '#f59e0b', orbit: 0.72, speed: 0.0003, angle: 3.20,  tiltX: 0.90, tiltY: 1.0, size: 3.5 },
+    { label: 'email-context',     color: '#06b6d4', orbit: 0.50, speed: 0.0004, angle: 4.00,  tiltX: 1.0, tiltY: 0.92, size: 3.5 },
+    { label: 'frustrations',      color: '#f43f5e', orbit: 0.42, speed: 0.0005, angle: 4.80,  tiltX: 0.92, tiltY: 1.0, size: 3 },
+    { label: 'show-arcs',         color: '#f43f5e', orbit: 0.75, speed: 0.0003, angle: 5.60,  tiltX: 1.0, tiltY: 0.88, size: 3.5 },
+    { label: 'editorial-voice',   color: '#8b5cf6', orbit: 0.46, speed: 0.0005, angle: 0.20,  tiltX: 0.88, tiltY: 1.0, size: 3 },
+    { label: 'guest-dynamics',    color: '#10b981', orbit: 0.56, speed: 0.0004, angle: 3.80,  tiltX: 1.0, tiltY: 0.95, size: 3 },
+  ];
+
+  // Background data-point particles — spread across the full sphere interior
+  const noteItems = [];
+  for (let i = 0; i < 80; i++) {
+    const colors = ['#4a9eff','#8b5cf6','#f59e0b','#10b981','#f43f5e','#06b6d4'];
+    noteItems.push({
+      label: '', color: colors[i % colors.length],
+      orbit: 0.20 + Math.random() * 0.75,
+      speed: 0.0004 + Math.random() * 0.002,
+      angle: Math.random() * Math.PI * 2,
+      tiltX: 0.55 + Math.random() * 0.42,
+      tiltY: 0.55 + Math.random() * 0.42,
+      phase: Math.random() * Math.PI * 2,
+      size: 1 + Math.random() * 2,
+    });
+  }
+
+  // Dense connections between vault items
+  const connections = [
+    [0,1],[0,2],[0,10],[0,11],[1,3],[1,11],[1,16],[2,4],[2,12],[2,13],
+    [3,5],[3,18],[3,25],[4,6],[4,15],[4,21],[5,7],[5,14],[5,19],
+    [6,0],[6,24],[6,25],[7,1],[7,22],[7,16],[8,0],[8,2],[8,4],[8,9],
+    [9,1],[9,3],[9,5],[9,8],[10,11],[10,15],[11,16],[12,13],[12,14],
+    [13,21],[14,19],[14,26],[15,20],[16,22],[17,25],[18,24],[19,26],
+    [20,23],[21,22],[23,17],[24,6],[25,3],[26,5],
+  ];
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    canvas.width = W * devicePixelRatio;
+    canvas.height = H * devicePixelRatio;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+
+  // Global slow rotation angle for the whole sphere
+  function globalRot(time) { return time * 0.0004; }
+
+  function nodePos(item, cx, cy, R, time) {
+    // Fixed position with gentle wobble, then rotate the whole sphere
+    const wobbleX = Math.sin(time * item.speed * 2 + item.angle) * R * 0.03;
+    const wobbleY = Math.cos(time * item.speed * 1.5 + item.angle * 1.3) * R * 0.025;
+    // Base position from angle + orbit (fixed placement on sphere surface)
+    const baseX = Math.cos(item.angle) * R * item.orbit * item.tiltX;
+    const baseY = Math.sin(item.angle) * R * item.orbit * item.tiltY;
+    // Apply global rotation
+    const rot = globalRot(time);
+    const rx = baseX * Math.cos(rot) - baseY * Math.sin(rot) * 0.3;
+    const ry = baseX * Math.sin(rot) * 0.3 + baseY * Math.cos(rot);
+    return {
+      x: cx + rx + wobbleX,
+      y: cy + ry + wobbleY,
+    };
+  }
+
+  function draw() {
+    t++;
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2;
+    const R = Math.min(W, H) * 0.30;
+
+    // === FUTURISTIC VIRTUAL ENVIRONMENT BACKGROUND ===
+    // Base dark gradient
+    const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W,H)*0.8);
+    bgGrad.addColorStop(0, '#0c1628');
+    bgGrad.addColorStop(0.4, '#080e1e');
+    bgGrad.addColorStop(1, '#040810');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Perspective grid floor — receding lines for depth
+    ctx.save();
+    const horizonY = cy + R * 1.8;
+    const gridVanishX = cx;
+    ctx.globalAlpha = 0.04;
+    ctx.strokeStyle = '#4a9eff';
+    ctx.lineWidth = 0.5;
+    // Horizontal grid lines (receding toward horizon)
+    for (let i = 0; i < 18; i++) {
+      const frac = i / 18;
+      const yy = horizonY + frac * frac * (H - horizonY) * 1.5;
+      if (yy > H) continue;
+      const spread = 1 + frac * 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - W * 0.5 * spread, yy);
+      ctx.lineTo(cx + W * 0.5 * spread, yy);
+      ctx.stroke();
+    }
+    // Vertical grid lines (converging to vanishing point)
+    for (let i = -8; i <= 8; i++) {
+      const baseX = cx + i * (W / 14);
+      ctx.beginPath();
+      ctx.moveTo(baseX, H);
+      ctx.lineTo(gridVanishX, horizonY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Ceiling grid (mirror, fainter)
+    ctx.save();
+    const ceilY = cy - R * 1.8;
+    ctx.globalAlpha = 0.025;
+    ctx.strokeStyle = '#8b5cf6';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 12; i++) {
+      const frac = i / 12;
+      const yy = ceilY - frac * frac * ceilY * 1.2;
+      if (yy < 0) continue;
+      const spread = 1 + frac * 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - W * 0.5 * spread, yy);
+      ctx.lineTo(cx + W * 0.5 * spread, yy);
+      ctx.stroke();
+    }
+    for (let i = -6; i <= 6; i++) {
+      const baseX = cx + i * (W / 10);
+      ctx.beginPath();
+      ctx.moveTo(baseX, 0);
+      ctx.lineTo(cx, ceilY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Ambient glow around sphere
+    const ambGrad = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 2.5);
+    ambGrad.addColorStop(0, 'rgba(30, 60, 120, 0.12)');
+    ambGrad.addColorStop(0.5, 'rgba(20, 40, 80, 0.05)');
+    ambGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = ambGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Star field — dense twinkling stars
+    ctx.save();
+    for (let i = 0; i < 200; i++) {
+      const seed = i * 137.508;
+      const sx = ((seed * 7.31 + 13) % W);
+      const sy = ((seed * 3.77 + 7) % H);
+      const twinkle = 0.4 + Math.sin(t * 0.025 + i * 2.1) * 0.3 + Math.sin(t * 0.009 + i * 0.8) * 0.2;
+      const starSize = (i % 7 === 0) ? 2.0 : (i % 4 === 0) ? 1.4 : (i % 2 === 0) ? 0.9 : 0.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, starSize, 0, Math.PI * 2);
+      ctx.fillStyle = i % 7 === 0 ? '#8899dd' : i % 11 === 0 ? '#bb99ee' : i % 13 === 0 ? '#88ddaa' : '#ffffff';
+      ctx.globalAlpha = twinkle * 0.3;
+      ctx.fill();
+      // Cross-hair sparkle on brighter stars
+      if (starSize >= 1.4) {
+        ctx.globalAlpha = twinkle * 0.12;
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sx - starSize * 2.5, sy);
+        ctx.lineTo(sx + starSize * 2.5, sy);
+        ctx.moveTo(sx, sy - starSize * 2.5);
+        ctx.lineTo(sx, sy + starSize * 2.5);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Faint nebula clouds for depth texture
+    ctx.save();
+    for (let i = 0; i < 4; i++) {
+      const nebSeed = i * 234.7;
+      const nx = (W * 0.15) + ((nebSeed * 3.1) % (W * 0.7));
+      const ny = (H * 0.1) + ((nebSeed * 2.3) % (H * 0.8));
+      const nr = 80 + (i % 3) * 50;
+      const nebGrad = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+      const nebColor = i % 2 === 0 ? '74, 158, 255' : '139, 92, 246';
+      nebGrad.addColorStop(0, `rgba(${nebColor}, 0.03)`);
+      nebGrad.addColorStop(0.5, `rgba(${nebColor}, 0.01)`);
+      nebGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = nebGrad;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+
+    // Floating ambient particles — drifting motes
+    ctx.save();
+    for (let i = 0; i < 50; i++) {
+      const seed = i * 137.5;
+      const px2 = ((cx + Math.sin(t * 0.003 + seed) * W * 0.48 + Math.cos(seed * 2.3) * W * 0.35) % W + W) % W;
+      const py2 = ((cy + Math.cos(t * 0.002 + seed * 1.7) * H * 0.45 + Math.sin(seed * 1.1) * H * 0.35) % H + H) % H;
+      const moteSize = 0.6 + Math.sin(t * 0.012 + i) * 0.3;
+      ctx.beginPath();
+      ctx.arc(px2, py2, moteSize, 0, Math.PI * 2);
+      ctx.fillStyle = i % 3 === 0 ? '#4a9eff' : i % 3 === 1 ? '#8b5cf6' : '#06b6d4';
+      ctx.globalAlpha = 0.08 + Math.sin(t * 0.008 + i * 0.5) * 0.04;
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Outer glow rings
+    for (let i = 4; i >= 0; i--) {
+      const rr = R + i * 10 + Math.sin(t * 0.015 + i) * 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = SPHERE_EDGE;
+      ctx.globalAlpha = 0.04 - i * 0.007;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Core sphere fill — layered depth
+    const sphereGrad = ctx.createRadialGradient(cx - R * 0.2, cy - R * 0.2, R * 0.05, cx, cy, R);
+    sphereGrad.addColorStop(0, '#1e3870');
+    sphereGrad.addColorStop(0.3, '#162c5a');
+    sphereGrad.addColorStop(0.6, '#10204a');
+    sphereGrad.addColorStop(1, '#0a1530');
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = sphereGrad;
+    ctx.fill();
+
+    // Interior energy field — soft green plasma texture
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R - 1, 0, Math.PI * 2);
+    ctx.clip();
+    // Green energy wash
+    const greenFieldGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.9);
+    greenFieldGrad.addColorStop(0, 'rgba(16, 185, 129, 0.06)');
+    greenFieldGrad.addColorStop(0.5, 'rgba(16, 185, 129, 0.025)');
+    greenFieldGrad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    ctx.fillStyle = greenFieldGrad;
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    // Plasma veins — green-tinted curved energy lines
+    for (let i = 0; i < 18; i++) {
+      const baseAngle = (i / 18) * Math.PI * 2 + t * 0.0007;
+      const r1 = R * (0.15 + (i % 4) * 0.18);
+      const r2 = R * (0.3 + ((i + 2) % 5) * 0.14);
+      const x1 = cx + Math.cos(baseAngle) * r1;
+      const y1 = cy + Math.sin(baseAngle) * r1 * 0.7;
+      const x2 = cx + Math.cos(baseAngle + 1.8 + Math.sin(t * 0.004 + i) * 0.3) * r2;
+      const y2 = cy + Math.sin(baseAngle + 1.2 + Math.cos(t * 0.003 + i) * 0.2) * r2 * 0.8;
+      const cpx = cx + Math.cos(baseAngle + 0.9) * R * 0.5;
+      const cpy = cy + Math.sin(baseAngle + 0.6) * R * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+      const veinColors = ['#10b981', '#0d9668', '#14c99a', '#0a7a55', '#4a9eff', '#8b5cf6'];
+      ctx.strokeStyle = veinColors[i % veinColors.length];
+      ctx.globalAlpha = 0.05 + Math.sin(t * 0.01 + i * 1.5) * 0.025;
+      ctx.lineWidth = 0.8 + Math.sin(t * 0.008 + i) * 0.5;
+      ctx.stroke();
+    }
+    // Interior shimmer spots — green-tinted
+    for (let i = 0; i < 12; i++) {
+      const sa = (i / 12) * Math.PI * 2 + t * 0.002;
+      const sr = R * (0.2 + (i % 3) * 0.2);
+      const sx2 = cx + Math.cos(sa) * sr * 0.8;
+      const sy2 = cy + Math.sin(sa) * sr * 0.6;
+      const shimGrad = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, R * 0.14);
+      const shimColor = i % 3 === 0 ? '16, 185, 129' : i % 3 === 1 ? '74, 158, 255' : '139, 92, 246';
+      shimGrad.addColorStop(0, `rgba(${shimColor}, 0.07)`);
+      shimGrad.addColorStop(1, `rgba(${shimColor}, 0)`);
+      ctx.globalAlpha = 0.5 + Math.sin(t * 0.015 + i * 2) * 0.3;
+      ctx.fillStyle = shimGrad;
+      ctx.fillRect(sx2 - R * 0.15, sy2 - R * 0.15, R * 0.3, R * 0.3);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // Wireframe latitude lines
+    ctx.save();
+    ctx.globalAlpha = 0.10;
+    ctx.strokeStyle = SPHERE_EDGE;
+    ctx.lineWidth = 0.6;
+    for (let i = -4; i <= 4; i++) {
+      const yOff = i * R * 0.2;
+      const rr = Math.sqrt(Math.max(0, R * R - yOff * yOff));
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + yOff, rr, rr * 0.12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Longitude lines
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI + t * 0.001;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.abs(Math.cos(angle)) * R, R, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Connection lines between vault nodes — layered neural tissue
+    const vaultPositions = vaultItems.map(v => nodePos(v, cx, cy, R, t));
+    // Wide diffuse glow layer first
+    for (const [a, b] of connections) {
+      const pa = vaultPositions[a], pb = vaultPositions[b];
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.strokeStyle = vaultItems[a].color;
+      ctx.globalAlpha = 0.035;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+    }
+    // Mid glow layer
+    for (const [a, b] of connections) {
+      const pa = vaultPositions[a], pb = vaultPositions[b];
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.strokeStyle = vaultItems[a].color;
+      ctx.globalAlpha = 0.07;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Sharp core line
+    for (const [a, b] of connections) {
+      const pa = vaultPositions[a], pb = vaultPositions[b];
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.strokeStyle = vaultItems[a].color;
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Animated data packets along connections
+    for (let ci = 0; ci < connections.length; ci++) {
+      if ((ci + Math.floor(t / 200)) % 4 !== 0) continue;
+      const [a, b] = connections[ci];
+      const pa = vaultPositions[a], pb = vaultPositions[b];
+      const progress = (t % 250) / 250;
+      const px = pa.x + (pb.x - pa.x) * progress;
+      const py = pa.y + (pb.y - pa.y) * progress;
+      const color = vaultItems[a].color;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw small background notes
+    for (const n of noteItems) {
+      const p = nodePos(n, cx, cy, R, t);
+      // Fade if outside sphere
+      const dist = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
+      const inSphere = dist < R;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, n.size, 0, Math.PI * 2);
+      ctx.fillStyle = n.color;
+      ctx.globalAlpha = inSphere ? 0.2 : 0.06;
+      ctx.fill();
+      // Connection to center — radial tissue
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = n.color;
+      ctx.globalAlpha = inSphere ? 0.05 : 0.015;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Draw labeled vault nodes
+    for (let i = 0; i < vaultItems.length; i++) {
+      const v = vaultItems[i];
+      const p = vaultPositions[i];
+      const dist = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
+      const inSphere = dist < R * 0.95;
+      const alpha = inSphere ? 0.85 : 0.3;
+      const isBold = v.bold === true;
+
+      // Outer glow — larger for bold items
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, v.size + (isBold ? 10 : 5), 0, Math.PI * 2);
+      ctx.fillStyle = v.color;
+      ctx.globalAlpha = alpha * (isBold ? 0.12 : 0.15);
+      ctx.fill();
+
+      // Dot
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, v.size, 0, Math.PI * 2);
+      ctx.fillStyle = v.color;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = isBold ? v.color : 'transparent';
+      ctx.shadowBlur = isBold ? 12 : 0;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Label
+      if (v.label) {
+        if (isBold) {
+          ctx.font = '800 14px Inter, sans-serif';
+          ctx.fillStyle = v.color;
+          ctx.globalAlpha = alpha * 0.95;
+        } else {
+          ctx.font = '600 11px Inter, sans-serif';
+          ctx.fillStyle = v.color;
+          ctx.globalAlpha = alpha * 0.8;
+        }
+        ctx.textAlign = 'center';
+        ctx.fillText(v.label, p.x, p.y - v.size - (isBold ? 12 : 8));
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Specular highlight on sphere
+    const specGrad = ctx.createRadialGradient(cx - R * 0.2, cy - R * 0.25, 0, cx - R * 0.2, cy - R * 0.25, R * 0.5);
+    specGrad.addColorStop(0, 'rgba(255,255,255,0.06)');
+    specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = specGrad;
+    ctx.fill();
+
+    // Sphere edge — dark green hue ring around the sphere itself
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = '#0d6b4a';
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Softer glow ring just outside
+    ctx.beginPath();
+    ctx.arc(cx, cy, R + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = '#10b981';
+    ctx.globalAlpha = 0.10;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // === SATURN RING SYSTEM ===
+    // Multiple tilted elliptical rings around the sphere
+    const ringTilt = 0.18; // how flat the rings appear (0 = edge-on, 1 = face-on)
+    const ringColors = ['#4a9eff','#8b5cf6','#06b6d4','#f59e0b'];
+    const ringRadii = [R * 1.30, R * 1.38, R * 1.46, R * 1.54];
+    const ringWidths = [2.0, 1.5, 1.2, 1.0];
+    const ringAlphas = [0.30, 0.22, 0.18, 0.14];
+
+    // Draw the back half of rings (behind the sphere)
+    ctx.save();
+    for (let ri = 0; ri < ringRadii.length; ri++) {
+      const rr = ringRadii[ri];
+      const rotAngle = t * 0.0015 + ri * 0.3;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rr, rr * ringTilt, rotAngle, Math.PI, Math.PI * 2);
+      ctx.strokeStyle = ringColors[ri];
+      ctx.globalAlpha = ringAlphas[ri] * 0.5;
+      ctx.lineWidth = ringWidths[ri];
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Re-draw sphere front to occlude back rings
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.97, 0, Math.PI * 2);
+    const occludeGrad = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 0.97);
+    occludeGrad.addColorStop(0, 'rgba(10,21,48,0.0)');
+    occludeGrad.addColorStop(0.7, 'rgba(10,21,48,0.4)');
+    occludeGrad.addColorStop(1, 'rgba(10,21,48,0.7)');
+    ctx.fillStyle = occludeGrad;
+    ctx.fill();
+    ctx.restore();
+
+    // Draw the front half of rings (in front of the sphere)
+    ctx.save();
+    for (let ri = 0; ri < ringRadii.length; ri++) {
+      const rr = ringRadii[ri];
+      const rotAngle = t * 0.0015 + ri * 0.3;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rr, rr * ringTilt, rotAngle, 0, Math.PI);
+      ctx.strokeStyle = ringColors[ri];
+      ctx.globalAlpha = ringAlphas[ri];
+      ctx.lineWidth = ringWidths[ri];
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Ring particles — data packets orbiting in the rings
+    ctx.save();
+    const ringParticleCount = 24;
+    for (let i = 0; i < ringParticleCount; i++) {
+      const ri = i % ringRadii.length;
+      const rr = ringRadii[ri];
+      const speed = 0.003 + ri * 0.0008;
+      const angle = (i / ringParticleCount) * Math.PI * 2 + t * speed;
+      const rotAngle = t * 0.0015 + ri * 0.3;
+      // Position on tilted ellipse
+      const localX = Math.cos(angle) * rr;
+      const localY = Math.sin(angle) * rr * ringTilt;
+      const px = cx + localX * Math.cos(rotAngle) - localY * Math.sin(rotAngle);
+      const py = cy + localX * Math.sin(rotAngle) + localY * Math.cos(rotAngle);
+      // Only draw if in the front half (not behind sphere)
+      const behindSphere = Math.sin(angle) < -0.1 && Math.sqrt((px-cx)**2+(py-cy)**2) < R * 1.05;
+      if (behindSphere) continue;
+      const pColor = ringColors[ri];
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = pColor;
+      ctx.globalAlpha = 0.6;
+      ctx.shadowColor = pColor;
+      ctx.shadowBlur = 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // === COMET AGENTS — fly in, catch a ring, orbit around, release, fly out ===
+    // Three phases: approach (0-0.15), orbit ring (0.15-0.75), depart (0.75-1.0)
+    const cometCount = 12;
+    const cometColors = [
+      '#4a9eff','#10b981','#8b5cf6',
+      '#4a9eff','#10b981','#8b5cf6',
+      '#f59e0b','#f43f5e','#06b6d4',
+      '#f59e0b','#f43f5e','#06b6d4',
+    ];
+    const cometLabels = [
+      'Recall Facts','Recall Context','Recall Temporal',
+      'Recall Facts','Recall Context','Recall Temporal',
+      'Observe Facts','Observe Patterns','Observe Relations',
+      'Observe Facts','Observe Patterns','Observe Relations',
+    ];
+    const cometTailLen = 30;
+    const cometCycle = 1200; // frames for full approach-orbit-depart (slow, graceful)
+
+    // Each comet is assigned to a ring
+    const cometRingAssign = [0,1,2,3, 0,1,2,3, 0,1,2,3];
+
+    // Position helper for a point on a tilted ring ellipse
+    function ringPos(ringIdx, angle) {
+      const rr = ringRadii[ringIdx];
+      const rotAngle = t * 0.0015 + ringIdx * 0.3;
+      const lx = Math.cos(angle) * rr;
+      const ly = Math.sin(angle) * rr * ringTilt;
+      return {
+        x: cx + lx * Math.cos(rotAngle) - ly * Math.sin(rotAngle),
+        y: cy + lx * Math.sin(rotAngle) + ly * Math.cos(rotAngle),
+      };
+    }
+
+    for (let ci = 0; ci < cometCount; ci++) {
+      const color = cometColors[ci];
+      const ri = cometRingAssign[ci];
+
+      // Stagger timing so comets arrive at different times
+      const offset = ci * (cometCycle * 0.45);
+      const rawPhase = ((t + offset) % (cometCycle * 1.3)) / (cometCycle * 1.3);
+
+      // Pause phase — comet is off-screen
+      if (rawPhase > 0.85) continue;
+      const phase = rawPhase / 0.85; // normalize to 0-1
+
+      // Entry angle for this comet
+      const entryAngle = (ci / cometCount) * Math.PI * 2 + ci * 0.7;
+      const farDist = Math.max(W, H) * 0.75;
+
+      let px, py;
+
+      // Store trail positions
+      const trail = [];
+      const trailSteps = cometTailLen;
+      const stepSize = 0.006;
+
+      for (let ti = trailSteps; ti >= 0; ti--) {
+        const trailPhase = Math.max(0, phase - ti * stepSize);
+        let tx, ty;
+
+        if (trailPhase <= 0.15) {
+          // APPROACH: fly in from off-screen toward the ring catch point
+          const ap = trailPhase / 0.15; // 0→1 during approach
+          const eased = ap * ap; // ease-in (accelerate)
+          const startX = cx + Math.cos(entryAngle) * farDist;
+          const startY = cy + Math.sin(entryAngle) * farDist;
+          const catchAngle = entryAngle + Math.PI; // arrive opposite side
+          const catchPos = ringPos(ri, catchAngle);
+          tx = startX + (catchPos.x - startX) * eased;
+          ty = startY + (catchPos.y - startY) * eased;
+        } else if (trailPhase <= 0.75) {
+          // ORBIT: travel around the ring (one full loop)
+          const op = (trailPhase - 0.15) / 0.60; // 0→1 during orbit
+          const catchAngle = entryAngle + Math.PI;
+          const orbitAngle = catchAngle + op * Math.PI * 2; // full loop
+          const rp = ringPos(ri, orbitAngle);
+          tx = rp.x;
+          ty = rp.y;
+        } else {
+          // DEPART: release from ring and fly off-screen
+          const dp = (trailPhase - 0.75) / 0.25; // 0→1 during departure
+          const eased = 1 - (1 - dp) * (1 - dp); // ease-out (decelerate start)
+          const releaseAngle = entryAngle + Math.PI + Math.PI * 2; // where we left the ring
+          const releasePos = ringPos(ri, releaseAngle);
+          const exitAngle = entryAngle + 0.4; // depart roughly where we came from
+          const endX = cx + Math.cos(exitAngle) * farDist;
+          const endY = cy + Math.sin(exitAngle) * farDist;
+          tx = releasePos.x + (endX - releasePos.x) * eased;
+          ty = releasePos.y + (endY - releasePos.y) * eased;
+        }
+
+        trail.push({ x: tx, y: ty });
+      }
+
+      // Draw comet trail — wide diffuse outer glow + sharp inner core
+      ctx.save();
+      // Outer glow pass — wide, soft
+      for (let ti = 1; ti < trail.length; ti++) {
+        const tp = trail[ti];
+        const prev = trail[ti - 1];
+        const frac = ti / trail.length;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, 2 + frac * 6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = frac * 0.06;
+        ctx.fill();
+      }
+      // Inner core trail — sharp bright dots
+      for (let ti = 0; ti < trail.length; ti++) {
+        const tp = trail[ti];
+        const frac = ti / trail.length;
+        const size = 0.8 + frac * 3;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = frac > 0.7 ? '#ffffff' : color;
+        ctx.globalAlpha = frac * 0.5;
+        ctx.fill();
+      }
+
+      // Draw head — bright comet nucleus with large glow
+      const head = trail[trail.length - 1];
+      px = head.x; py = head.y;
+      // Outer coma glow
+      const comaGrad = ctx.createRadialGradient(px, py, 0, px, py, 18);
+      comaGrad.addColorStop(0, color);
+      comaGrad.addColorStop(0.3, color + '60');
+      comaGrad.addColorStop(1, color + '00');
+      ctx.beginPath();
+      ctx.arc(px, py, 18, 0, Math.PI * 2);
+      ctx.fillStyle = comaGrad;
+      ctx.globalAlpha = 0.5;
+      ctx.fill();
+      // Bright core
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.95;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 16;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(px, py, 5.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Label when orbiting (phase 0.15-0.75)
+      if (phase > 0.12 && phase < 0.78) {
+        ctx.font = '500 9px JetBrains Mono, monospace';
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.45;
+        ctx.textAlign = 'center';
+        ctx.fillText(cometLabels[ci], px, py - 10);
+      }
+
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  draw();
+})();
+</script>
+
+</body>
+</html>

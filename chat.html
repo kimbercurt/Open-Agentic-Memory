@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Agentic Memory</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#0a0a0f;--bg2:#0e0e16;--bg3:#12121a;--border:#1a1a2e;--border2:#2a2a42;--text:#e0e0e8;--dim:#6a6a8a;--bright:#fff;--blue:#4a9eff;--purple:#8b5cf6;--green:#10b981;--amber:#f59e0b;--rose:#f43f5e;--cyan:#06b6d4}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:grid;grid-template-rows:auto 240px 1fr;grid-template-columns:1fr 300px}
+  body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(74,158,255,0.015) 1px,transparent 1px),linear-gradient(90deg,rgba(74,158,255,0.015) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+
+  /* Header */
+  .header{grid-column:1/-1;position:relative;z-index:2;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px}
+  .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(74,158,255,0.3),rgba(139,92,246,0.3),transparent)}
+  .header .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 6px rgba(16,185,129,0.5);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+  .header h1{font-size:15px;font-weight:700;background:linear-gradient(135deg,#fff,var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  /* Brain switcher tabs */
+  .brain-tabs{display:flex;gap:4px;margin-left:16px}
+  .brain-tab{font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--dim);font-family:'Inter',sans-serif;font-weight:500;transition:all .15s}
+  .brain-tab.active{background:rgba(74,158,255,0.1);border-color:rgba(74,158,255,0.3);color:var(--blue)}
+  .brain-tab:hover:not(.active){background:rgba(255,255,255,0.03)}
+  .header .tags{margin-left:auto;display:flex;gap:6px}
+  .header .tag{font-size:9px;padding:3px 8px;border-radius:5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);color:var(--dim)}
+
+  /* Top: Brain visualization — spans full width */
+  .viz-panel{grid-column:1/-1;position:relative;z-index:1;border-bottom:1px solid var(--border);background:var(--bg2)}
+  .viz-panel canvas{width:100%;height:100%}
+
+  /* Bottom-left: Chat */
+  .chat-panel{position:relative;z-index:1;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
+  .messages{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+  .messages::-webkit-scrollbar{width:4px}
+  .messages::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:2px}
+  .msg{max-width:85%;padding:12px 16px;border-radius:14px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;animation:msgIn .2s ease-out}
+  @keyframes msgIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+  .msg.assistant{align-self:flex-start;background:#13132a;border:1px solid #1e1e32;border-bottom-left-radius:4px}
+  .msg.user{align-self:flex-end;background:#1a3060;border:1px solid #2a4a7a;border-bottom-right-radius:4px}
+  .msg.system{align-self:center;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.12);color:var(--green);font-size:11px;text-align:center;border-radius:8px;padding:8px 14px;max-width:90%}
+  .input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:8px}
+  .input-area input{flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Inter',sans-serif;outline:none;transition:border .2s}
+  .input-area input:focus{border-color:var(--blue)}
+  .input-area input::placeholder{color:#444460}
+  .input-area button{background:linear-gradient(135deg,var(--blue),var(--purple));border:none;border-radius:10px;padding:10px 20px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
+  .input-area button:disabled{opacity:.3;cursor:not-allowed}
+  .typing{display:flex;gap:4px;padding:5px 0}
+  .typing span{width:5px;height:5px;background:var(--blue);border-radius:50%;animation:bounce 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s}
+  .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-7px)}}
+  .reason-btn{font-size:9px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .15s}
+  .reason-btn:hover{border-color:var(--blue);color:var(--blue)}
+  .reason-btn.active{background:rgba(74,158,255,0.12);border-color:rgba(74,158,255,0.3);color:var(--blue)}
+
+  /* Bottom-right: Agents panel */
+  .agents-panel{position:relative;z-index:1;overflow-y:auto;padding:14px;background:var(--bg2)}
+  .agents-panel::-webkit-scrollbar{width:4px}
+  .agents-panel::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:2px}
+  .agents-panel h3{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin:12px 0 8px 4px}
+  .agents-panel h3:first-child{margin-top:0}
+  .agent-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;margin-bottom:3px;transition:background .15s}
+  .agent-row:hover{background:rgba(255,255,255,0.02)}
+  .agent-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+  .agent-info{flex:1;min-width:0}
+  .agent-info .name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .agent-info .role{font-size:9px;color:var(--dim)}
+  .agent-status{font-size:8px;padding:2px 6px;border-radius:3px;font-family:'JetBrains Mono',monospace;flex-shrink:0}
+  .agent-status.active{color:var(--green);background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15)}
+  .agent-status.idle{color:var(--dim);background:rgba(255,255,255,0.02);border:1px solid var(--border)}
+  .agent-status.bg{color:var(--amber);background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.12)}
+  .agent-divider{height:1px;background:var(--border);margin:8px 4px}
+
+  @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto 200px 1fr}.agents-panel{display:none}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="dot"></div>
+  <h1>Open Agentic Memory</h1>
+  <div class="brain-tabs" id="brainTabs"></div>
+  <div class="tags">
+    <span class="tag" id="frameworkTag">...</span>
+    <span class="tag" id="modelTag">...</span>
+  </div>
+</div>
+
+<div class="viz-panel"><canvas id="vizCanvas"></canvas></div>
+
+<div class="chat-panel">
+  <div class="messages" id="messages">
+    <div class="msg system">Connecting...</div>
+  </div>
+  <div style="padding:6px 16px 0;display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);background:var(--bg2);">
+    <span style="font-size:9px;color:var(--dim);margin-right:2px;">Reasoning:</span>
+    <button class="reason-btn active" data-level="low" onclick="setReasoning('low')">Low</button>
+    <button class="reason-btn" data-level="med" onclick="setReasoning('med')">Med</button>
+    <button class="reason-btn" data-level="high" onclick="setReasoning('high')">High</button>
+    <button class="reason-btn" data-level="max" onclick="setReasoning('max')">Max</button>
+  </div>
+  <div class="input-area">
+    <input type="text" id="input" placeholder="Talk to your agent..." autofocus />
+    <button onclick="clearChat()" style="background:transparent;border:1px solid var(--border2);border-radius:10px;padding:10px 14px;color:var(--dim);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s" onmouseover="this.style.borderColor='var(--rose)';this.style.color='var(--rose)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--dim)'">Clear</button>
+    <button id="send" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<div class="agents-panel" id="agentsPanel"></div>
+
+<script>
+const messagesEl=document.getElementById('messages'),inputEl=document.getElementById('input'),sendBtn=document.getElementById('send');
+let sending=false,agentInfo={},activeBrain=0,reasoningLevel='low';
+
+function setReasoning(level){
+  reasoningLevel=level;
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.toggle('active',b.dataset.level===level));
+}
+
+function clearChat(){
+  const container=getOrCreateBrainContainer(activeBrain);
+  container.innerHTML='';
+  const brain=agentInfo.brains?.[activeBrain];
+  const sysMsg=document.createElement('div');sysMsg.className='msg system';
+  sysMsg.textContent='Chat cleared. Talking to '+(brain?.name||'Agent')+'.';
+  container.appendChild(sysMsg);
+  // Also clear server-side conversation for this brain
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'__clear__',mode:'agent',brain:brain?.key||'assistant'})}).catch(()=>{});
+}
+
+// Per-brain message containers — each brain gets its own div
+const brainMessageContainers={};
+
+function getOrCreateBrainContainer(idx){
+  if(!brainMessageContainers[idx]){
+    const div=document.createElement('div');
+    div.style.display='flex';div.style.flexDirection='column';div.style.gap='12px';
+    const brain=agentInfo.brains?.[idx];
+    const sysMsg=document.createElement('div');sysMsg.className='msg system';
+    sysMsg.textContent='Talking to '+(brain?.name||'Agent')+'.';
+    div.appendChild(sysMsg);
+    brainMessageContainers[idx]=div;
+  }
+  return brainMessageContainers[idx];
+}
+
+fetch('/api/info').then(r=>r.json()).then(info=>{
+  agentInfo=info;
+  document.getElementById('modelTag').textContent=info.primary_model;
+  document.getElementById('frameworkTag').textContent=info.framework;
+  document.title=(info.brains?.[0]?.name||'Agent')+' — Open Agentic Memory';
+  buildBrainTabs(info);
+  buildAgentList(info);
+  // Initialize first brain's container
+  messagesEl.innerHTML='';
+  messagesEl.appendChild(getOrCreateBrainContainer(0));
+  initViz(info);
+});
+
+inputEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!sending)sendMessage()});
+function sendMessage(){const t=inputEl.value.trim();if(!t||sending)return;inputEl.value='';doSend(t)}
+
+async function doSend(text){
+  sending=true;sendBtn.disabled=true;addMessage('user',text);
+  const typ=document.createElement('div');typ.className='msg assistant';
+  typ.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
+  messagesEl.appendChild(typ);messagesEl.scrollTop=messagesEl.scrollHeight;
+  try{
+    const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,mode:'agent',brain:agentInfo.brains?.[activeBrain]?.key||'assistant',reasoning:reasoningLevel})});
+    const data=await resp.json();typ.remove();
+    let reply=data.reply||'';
+    if(reply.includes('```json'))reply=reply.replace(/```json[\s\S]*?```/g,'').trim();
+    if(reply)addMessage('assistant',reply);
+  }catch(err){typ.remove();addMessage('system','Error: '+err.message)}
+  sending=false;sendBtn.disabled=false;inputEl.focus();
+}
+function addMessage(role,text){
+  const container=getOrCreateBrainContainer(activeBrain);
+  const el=document.createElement('div');el.className='msg '+role;el.textContent=text;
+  container.appendChild(el);
+  messagesEl.scrollTop=messagesEl.scrollHeight;
+}
+
+// Brain tabs
+function buildBrainTabs(info){
+  const tabs=document.getElementById('brainTabs');
+  const brains=info.brains||[];
+  if(brains.length<=1){tabs.innerHTML='<span style="font-size:12px;color:var(--text);font-weight:600;">'+(brains[0]?.name||'Agent')+'</span>';return}
+  tabs.innerHTML=brains.map((b,i)=>'<button class="brain-tab'+(i===0?' active':'')+'" onclick="switchBrain('+i+')">'+b.name+'</button>').join('');
+}
+function switchBrain(idx){
+  activeBrain=idx;
+  document.querySelectorAll('.brain-tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  const brain=agentInfo.brains?.[idx];
+  // Swap the message container — previous brain's messages stay in their container
+  messagesEl.innerHTML='';
+  messagesEl.appendChild(getOrCreateBrainContainer(idx));
+  messagesEl.scrollTop=messagesEl.scrollHeight;
+  document.title=(brain?.name||'Agent')+' — Open Agentic Memory';
+}
+
+// Agent list
+function buildAgentList(info){
+  const panel=document.getElementById('agentsPanel');
+  const brains=info.brains||[{key:'assistant',name:'Assistant'}];
+  let html='';
+  brains.forEach(brain=>{
+    html+='<h3>'+brain.name+'</h3>';
+    [['Facts Recall','Deep recall',0],['Context Recall','Deep recall',1],['Temporal Recall','Deep recall',2]].forEach(([n,r,i])=>{
+      html+=agentRow(n,r,['var(--blue)','var(--green)','var(--purple)'][i],'idle');
+    });
+    html+='<div class="agent-divider"></div>';
+    [['Fact Observer','Every 15min'],['Pattern Observer','Every 15min'],['Relationship Observer','Every 15min']].forEach(([n,r])=>{
+      html+=agentRow(n,r,'var(--amber)','bg');
+    });
+    html+='<div class="agent-divider"></div>';
+  });
+  html+='<h3>Shared</h3>';
+  html+=agentRow('Memory Gate','Every message','var(--green)','active');
+  html+=agentRow('Topic Scout','Between turns','var(--purple)','active');
+  html+=agentRow('Relevance Scout','Between turns','var(--purple)','active');
+  panel.innerHTML=html;
+}
+function agentRow(name,role,color,status){
+  const sl=status==='active'?'active':status==='bg'?'bg':'idle';
+  const lb=status==='active'?'LIVE':status==='bg'?'15m':'READY';
+  return '<div class="agent-row"><div class="agent-dot" style="background:'+color+';box-shadow:0 0 4px '+color+'"></div><div class="agent-info"><div class="name">'+name+'</div><div class="role">'+role+'</div></div><span class="agent-status '+sl+'">'+lb+'</span></div>';
+}
+
+// Brain Visualization
+function initViz(info){
+  const canvas=document.getElementById('vizCanvas');if(!canvas)return;
+  const ctx=canvas.getContext('2d');let W,H,t=0;
+  const brains=info.brains||[{key:'assistant',name:'Assistant'}];
+  const brainColors=['#4a9eff','#f59e0b','#f43f5e','#06b6d4','#8b5cf6'];
+
+  function resize(){const r=canvas.parentElement.getBoundingClientRect();W=r.width;H=r.height;canvas.width=W*devicePixelRatio;canvas.height=H*devicePixelRatio;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);buildSpheres()}
+
+  const spheres=[];
+  function buildSpheres(){
+    spheres.length=0;
+    const count=brains.length;
+    const maxR=Math.min(W/(count*3.5),H*0.38,70);
+    // Center the brains with embed and vault nodes
+    brains.forEach((b,i)=>{
+      const spacing=maxR*3;
+      const totalW=(count-1)*spacing;
+      const cx=W/2-totalW/2+i*spacing;
+      const s={cx,cy:H*0.45,r:maxR,color:brainColors[i%brainColors.length],label:b.name||b.key,nodes:[]};
+      for(let n=0;n<12;n++){
+        s.nodes.push({angle:n/12*Math.PI*2,orbit:0.4+Math.random()*0.5,speed:0.0003+Math.random()*0.0008,tiltX:0.6+Math.random()*0.35,tiltY:0.6+Math.random()*0.35,size:1+Math.random()*1.5});
+      }
+      spheres.push(s);
+    });
+  }
+
+  function draw(){
+    t++;ctx.clearRect(0,0,W,H);
+    const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.6);
+    bg.addColorStop(0,'#0c1220');bg.addColorStop(1,'#0a0a0f');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    // Stars
+    for(let i=0;i<30;i++){const sx=(i*137.5*3.1+7)%W,sy=(i*137.5*1.7+3)%H;ctx.beginPath();ctx.arc(sx,sy,0.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.globalAlpha=0.1+Math.sin(t*.02+i)*0.05;ctx.fill()}ctx.globalAlpha=1;
+
+    // Vault node (top)
+    const vaultX=W/2,vaultY=H*0.1,vaultR=11;
+    ctx.beginPath();ctx.arc(vaultX,vaultY,vaultR,0,Math.PI*2);ctx.strokeStyle='#f43f5e';ctx.globalAlpha=0.3;ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='rgba(244,63,94,0.08)';ctx.fill();
+    // Spinning arc
+    const vsa=t*0.015;ctx.beginPath();ctx.arc(vaultX,vaultY,vaultR+2,vsa,vsa+Math.PI*0.5);ctx.strokeStyle='#f43f5e';ctx.globalAlpha=0.2;ctx.lineWidth=1;ctx.stroke();
+    ctx.globalAlpha=1;ctx.font='500 9px Inter';ctx.fillStyle='#f43f5e';ctx.globalAlpha=0.5;ctx.textAlign='center';ctx.fillText('Knowledge Vault',vaultX,vaultY+vaultR+10);ctx.globalAlpha=1;
+
+    // Embed node (bottom)
+    const embedX=W/2,embedY=H*0.88,embedR=12;
+    ctx.beginPath();ctx.arc(embedX,embedY,embedR,0,Math.PI*2);ctx.strokeStyle='#06b6d4';ctx.globalAlpha=0.3;ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='rgba(6,182,212,0.08)';ctx.fill();
+    const esa=t*0.012;ctx.beginPath();ctx.arc(embedX,embedY,embedR+2,esa,esa+Math.PI*0.5);ctx.strokeStyle='#06b6d4';ctx.globalAlpha=0.2;ctx.lineWidth=1;ctx.stroke();
+    ctx.globalAlpha=1;ctx.font='500 9px Inter';ctx.fillStyle='#06b6d4';ctx.globalAlpha=0.5;ctx.textAlign='center';ctx.fillText('Embedding',embedX,embedY+embedR+10);ctx.globalAlpha=1;
+
+    spheres.forEach(s=>{
+      const{cx,cy,r,color,label,nodes}=s;
+      // Glow
+      for(let i=2;i>=0;i--){ctx.beginPath();ctx.arc(cx,cy,r+i*4,0,Math.PI*2);ctx.strokeStyle=color;ctx.globalAlpha=0.025;ctx.lineWidth=1;ctx.stroke()}ctx.globalAlpha=1;
+      // Sphere
+      const sg=ctx.createRadialGradient(cx-r*.15,cy-r*.15,r*.05,cx,cy,r);
+      sg.addColorStop(0,color+'25');sg.addColorStop(1,color+'05');ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
+      // Green edge
+      ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.strokeStyle='#0d6b4a';ctx.globalAlpha=0.2;ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;
+      // Wireframe
+      ctx.globalAlpha=0.05;ctx.strokeStyle=color;ctx.lineWidth=0.4;
+      for(let i=-2;i<=2;i++){const yo=i*r*.3;const rr=Math.sqrt(Math.max(0,r*r-yo*yo));ctx.beginPath();ctx.ellipse(cx,cy+yo,rr,rr*.08,0,0,Math.PI*2);ctx.stroke()}
+      ctx.globalAlpha=1;
+      // Nodes
+      const rot=t*0.0003;
+      nodes.forEach(n=>{const bx=Math.cos(n.angle)*r*n.orbit*n.tiltX;const by=Math.sin(n.angle)*r*n.orbit*n.tiltY;const rx=bx*Math.cos(rot)-by*Math.sin(rot)*.3;const ry=bx*Math.sin(rot)*.3+by*Math.cos(rot);const px=cx+rx+Math.sin(t*n.speed*2+n.angle)*r*.02;const py=cy+ry+Math.cos(t*n.speed*1.5+n.angle)*r*.02;ctx.beginPath();ctx.arc(px,py,n.size,0,Math.PI*2);ctx.fillStyle=color;ctx.globalAlpha=.25;ctx.fill();ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(px,py);ctx.strokeStyle=color;ctx.globalAlpha=.02;ctx.lineWidth=.3;ctx.stroke()});ctx.globalAlpha=1;
+      // Label
+      ctx.font='600 11px Inter';ctx.fillStyle=color;ctx.globalAlpha=.8;ctx.textAlign='center';ctx.fillText(label,cx,cy+r+14);ctx.globalAlpha=1;
+      // Packets to embed (recall agents — going down)
+      for(let p=0;p<3;p++){const speed=.003+p*.001;const prog=(t*speed+p*2.1)%1;const px2=cx+(embedX-cx)*prog;const py2=cy+(embedY-cy)*prog;
+      ctx.beginPath();ctx.arc(px2,py2,2,0,Math.PI*2);ctx.fillStyle=['#10b981','#8b5cf6','#fff'][p];ctx.globalAlpha=.4;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=4;ctx.fill();ctx.shadowBlur=0}ctx.globalAlpha=1;
+      // Packets to vault (observer agents — going up)
+      for(let p=0;p<3;p++){const speed=.002+p*.001;const prog=(t*speed+p*2.3)%1;const px2=cx+(vaultX-cx)*prog;const py2=cy+(vaultY-cy)*prog;
+      ctx.beginPath();ctx.arc(px2,py2,2,0,Math.PI*2);ctx.fillStyle=['#f59e0b','#f43f5e','#8b5cf6'][p];ctx.globalAlpha=.35;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=4;ctx.fill();ctx.shadowBlur=0}ctx.globalAlpha=1;
+    });
+    // Handoff between brains
+    if(spheres.length>1){for(let i=0;i<spheres.length-1;i++){const a=spheres[i],b=spheres[i+1];ctx.beginPath();ctx.moveTo(a.cx+a.r,a.cy);ctx.lineTo(b.cx-b.r,b.cy);ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;ctx.stroke();const prog=(t%400)/400;const hx=a.cx+a.r+(b.cx-b.r-a.cx-a.r)*prog;ctx.beginPath();ctx.arc(hx,a.cy,1.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1}}
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize',resize);resize();draw();
+}
+</script>
+</body>
+</html>

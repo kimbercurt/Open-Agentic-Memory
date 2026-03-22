@@ -1,0 +1,29 @@
+# Open Agentic Memory — Anthropic Configuration
+models:
+  primary:
+    provider: "anthropic"
+    model: "claude-opus-4-6"
+    api_key_env: "ANTHROPIC_API_KEY"
+  fast:
+    provider: "anthropic"
+    model: "claude-haiku-4-5"
+    api_key_env: "ANTHROPIC_API_KEY"
+    thinking: "high"
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  api_key_env: "OPENAI_API_KEY"
+  dimensions: 1536
+storage:
+  vector:
+    backend: "qdrant"
+    path: "./data/vector"
+  database:
+    backend: "sqlite"
+    path: "./data/memory.db"
+  vault:
+    path: "./data/vault"
+brains:
+  - key: "assistant"
+    name: "Assistant"
+    description: "Primary AI assistant"

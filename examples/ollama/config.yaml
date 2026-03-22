@@ -1,0 +1,30 @@
+# Open Agentic Memory — Ollama (Local) Configuration
+# No API keys needed — everything runs on your machine
+models:
+  primary:
+    provider: "ollama"
+    model: "llama4:maverick"
+    base_url: "http://localhost:11434"
+  fast:
+    provider: "ollama"
+    model: "llama4:scout"
+    base_url: "http://localhost:11434"
+    thinking: "high"
+embedding:
+  provider: "ollama"
+  model: "nomic-embed-text"
+  endpoint: "http://localhost:11434/api/embed"
+  dimensions: 768
+storage:
+  vector:
+    backend: "qdrant"
+    path: "./data/vector"
+  database:
+    backend: "sqlite"
+    path: "./data/memory.db"
+  vault:
+    path: "./data/vault"
+brains:
+  - key: "assistant"
+    name: "Assistant"
+    description: "Primary AI assistant"
