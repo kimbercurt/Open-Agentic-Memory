@@ -41,11 +41,11 @@ The setup wizard walks you through:
 2. **Provider** — OpenAI, Anthropic, Ollama (local), OpenRouter, or custom
 3. **Primary Model** — your main chatbot LLM (shows provider-specific recommendations)
 4. **Fast Model** — for the 13 specialized agents (speed over depth)
-5. **Embedding Model** — for semantic memory search
-6. **API Key** — checks if it's set, tells you what to export
-7. **Number of Brains** — how many isolated chatbots you need
+5. **Embedding Provider** — auto-detects what is available on your machine; OpenClaw defaults to built-in memory search
+6. **API Keys** — checks what is already set and shows what still needs to be exported
+7. **Chatbots** — names each chatbot up front so the generated brain keys and folders are final
 
-It generates your `config.yaml`, creates all vault directories, sets up the Python environment, and tells you exactly what to run next.
+It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch` and registers the recall/observer agents automatically.
 
 ### Manual Setup
 
@@ -56,6 +56,8 @@ cp config.example.yaml config.yaml
 # Edit config.yaml with your models and API keys
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+.venv/bin/python serve_chat.py --init-only
+.venv/bin/python serve_chat.py
 ```
 
 ### Local Testing
@@ -161,13 +163,16 @@ open-agentic-memory/
 ├── config.example.yaml          # Configuration template
 ├── architecture.html            # Animated architecture diagram
 ├── requirements.txt             # Python dependencies
+├── serve_chat.py                # Memory API + browser chat/identity UI
+├── openclaw_setup.py            # OpenClaw agent registration helper
 ├── agents/                      # Agent prompts (the core IP)
 │   ├── recall/                  # Facts, Context, Temporal
 │   ├── observer/                # Facts, Patterns, Relationships
 │   └── scout/                   # Gate, Trajectory, Relevance
 ├── src/agentic_memory/          # Python implementation
 │   ├── __init__.py
-│   └── config.py                # Configuration loader
+│   ├── config.py                # Configuration loader
+│   └── runtime.py               # Memory runtime + orchestration
 └── examples/                    # Provider-specific configs
     ├── openai/
     ├── anthropic/

@@ -1,6 +1,8 @@
 # Open Agentic Memory — Configuration
 # Copy this to config.yaml and fill in your values.
 
+framework: "standalone"          # openclaw, standalone, langchain, manual
+
 # ============================================================
 # Models — plug in whatever you have
 # ============================================================
@@ -25,11 +27,12 @@ models:
 # Embedding — any embedding model
 # ============================================================
 embedding:
-  provider: "openai"             # openai, ollama, local, huggingface
+  provider: "openai"             # openai, ollama, gemini, voyage, mistral, openclaw-builtin
   model: "text-embedding-3-small"
   api_key_env: "OPENAI_API_KEY"
   # endpoint: ""                 # for ollama/local: http://localhost:11434/api/embed
   dimensions: 1536               # match your model's output dimensions
+  note: ""                       # optional: setup writes extra context here for OpenClaw built-in mode
 
 # ============================================================
 # Storage — where memories live

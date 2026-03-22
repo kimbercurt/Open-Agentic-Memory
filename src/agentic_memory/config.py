@@ -32,6 +32,7 @@ class EmbeddingConfig:
     api_key_env: str = "OPENAI_API_KEY"
     endpoint: str = ""
     dimensions: int = 1536
+    note: str = ""
 
     @property
     def api_key(self) -> str:
@@ -77,6 +78,7 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     brains: List[BrainConfig] = field(default_factory=lambda: [BrainConfig()])
     agents: AgentConfig = field(default_factory=AgentConfig)
+    framework: str = "standalone"
     server_host: str = "127.0.0.1"
     server_port: int = 8400
 
@@ -133,6 +135,7 @@ def load_config(path: str = "config.yaml") -> Config:
             api_key_env=emb.get("api_key_env", "OPENAI_API_KEY"),
             endpoint=emb.get("endpoint", ""),
             dimensions=emb.get("dimensions", 1536),
+            note=emb.get("note", ""),
         ),
         storage=StorageConfig(
             vector_backend=vector.get("backend", "qdrant"),
@@ -155,6 +158,7 @@ def load_config(path: str = "config.yaml") -> Config:
             scouts_enabled=scouts.get("enabled", True),
             scouts_timeout=scouts.get("timeout_seconds", 45),
         ),
+        framework=raw.get("framework", "standalone"),
         server_host=server.get("host", "127.0.0.1"),
         server_port=server.get("port", 8400),
     )
