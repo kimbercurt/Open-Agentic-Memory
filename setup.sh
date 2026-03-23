@@ -405,15 +405,25 @@ for profile_name, profile_provider, kind, profile in sorted(ranked, key=sort_key
         )
 
     if profile_provider == "anthropic":
-        secret = str(profile.get("apiKey") or profile.get("token") or "").strip()
+        secret = str(profile.get("apiKey") or profile.get("token") or profile.get("access") or "").strip()
         if secret:
-            emit(
-                source,
-                "anthropic",
-                "direct",
-                "Found Anthropic API credentials in OpenClaw.",
-                secret,
-            )
+            if secret.startswith("sk-ant-oat"):
+                # OAuth token — only works through the OpenClaw gateway
+                emit(
+                    source,
+                    "anthropic",
+                    "oauth-gateway",
+                    "Found Anthropic OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway.",
+                )
+            else:
+                # Regular API key (sk-ant-api*) — can call Anthropic directly
+                emit(
+                    source,
+                    "anthropic",
+                    "direct",
+                    "Found Anthropic API key in OpenClaw.",
+                    secret,
+                )
 
     if kind in {"api-key", "token", "password"}:
         secret = str(profile.get("apiKey") or profile.get("token") or profile.get("password") or "").strip()

@@ -506,6 +506,8 @@ def _anthropic_direct_auth_supported(api_key: str, api_source: str) -> Tuple[boo
     secret = str(api_key or "").strip()
     if not secret:
         return False, "missing API key for provider anthropic."
+    if secret.startswith("sk-ant-oat"):
+        return False, "Anthropic OAuth tokens (sk-ant-oat*) require gateway routing. Re-run setup.sh to fix auth_method."
     return True, ""
 
 
