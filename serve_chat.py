@@ -100,114 +100,8 @@ def load_config() -> Dict[str, Any]:
 
 
 # ============================================================
-# OpenClaw gateway detection
-# ============================================================
-
-def _load_openclaw_gateway_config() -> Optional[Dict[str, Any]]:
-    """Load OpenClaw gateway config if available."""
-    runtime_cfg = globals().get("runtime_config")
-    if runtime_cfg is None:
-        runtime_cfg = load_runtime_config(str(ROOT_DIR / "config.yaml"))
-
-    gateway_cfg = getattr(runtime_cfg, "gateway", None)
-    if gateway_cfg is not None:
-        base_url = str(getattr(gateway_cfg, "base_url", "") or "").strip().rstrip("/")
-        port = int(getattr(gateway_cfg, "port", 0) or 0)
-        if not base_url and port:
-            base_url = f"http://127.0.0.1:{port}"
-        if base_url:
-            token_env = str(getattr(gateway_cfg, "token_env", "") or "").strip()
-            token = str(getattr(gateway_cfg, "token", "") or "").strip()
-            if not token and token_env:
-                token = str(os.environ.get(token_env, "") or "").strip()
-            return {"port": port, "base_url": base_url, "token": token}
-
-    openclaw_path = Path.home() / ".openclaw" / "openclaw.json"
-    if not openclaw_path.exists():
-        return None
-    try:
-        with open(openclaw_path) as f:
-            oc = json.load(f)
-        gw = oc.get("gateway", {})
-        port = gw.get("port")
-        token = gw.get("auth", {}).get("token", "")
-        http_endpoints = gw.get("http", {}).get("endpoints", {})
-        if port and http_endpoints.get("chatCompletions", {}).get("enabled"):
-            return {"port": port, "base_url": f"http://127.0.0.1:{port}", "token": token}
-    except Exception:
-        pass
-    return None
-
-
-def _call_openclaw_gateway(messages: List[Dict], model: str, gateway: Dict[str, Any], thinking: str = "") -> str:
-    """Route through the OpenClaw gateway which handles all auth."""
-    import urllib.request
-    port = gateway.get("port")
-    token = gateway["token"]
-    base_url = str(gateway.get("base_url") or "").rstrip("/")
-    if not base_url and port:
-        base_url = f"http://127.0.0.1:{port}"
-    url = f"{base_url}/v1/chat/completions"
-    payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
-    if thinking:
-        payload["thinking"] = thinking
-        payload["reasoning_effort"] = thinking
-    body = json.dumps(payload).encode()
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            data = json.loads(resp.read())
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        return f"Error calling OpenClaw gateway: {e}"
-
-
-def _call_openclaw_cli_with_thinking(message: str, agent_id: str = "main", thinking: str = "low") -> str:
-    """Use the OpenClaw CLI with explicit --thinking flag."""
-    import shutil
-    binary = shutil.which("openclaw")
-    if not binary:
-        return "OpenClaw CLI not found in PATH."
-    clean_thinking = str(thinking or "low").strip().lower()
-    if clean_thinking not in ("low", "mid", "high", "xhigh"):
-        clean_thinking = "low"
-    try:
-        result = subprocess.run(
-            [binary, "agent", "--agent", agent_id, "--message", message, "--json", "--thinking", clean_thinking],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            if stderr:
-                return f"OpenClaw error: {stderr[:300]}"
-        try:
-            payload = json.loads(result.stdout)
-            # Extract reply text from OpenClaw response
-            payloads = payload.get("result", {}).get("payloads", payload.get("payloads", []))
-            if isinstance(payloads, list):
-                texts = [p.get("text", "") for p in payloads if isinstance(p, dict) and p.get("text")]
-                if texts:
-                    return "\n\n".join(texts)
-            return result.stdout[:1000]
-        except json.JSONDecodeError:
-            return result.stdout[:1000] if result.stdout else "No response from OpenClaw."
-    except subprocess.TimeoutExpired:
-        return "OpenClaw request timed out."
-    except Exception as e:
-        return f"Error running OpenClaw: {e}"
-
-
-# ============================================================
 # Model API proxy
 # ============================================================
-
-# Cache gateway config
-_openclaw_gateway: Optional[Dict[str, Any]] = None
-_openclaw_gateway_checked = False
-
 
 def call_model(messages: List[Dict[str, str]], config: Dict[str, Any], thinking: str = "") -> str:
     """Call the configured primary model and return the response text."""
@@ -218,54 +112,6 @@ def call_model(messages: List[Dict[str, str]], config: Dict[str, Any], thinking:
         thinking=thinking,
         app_config=runtime_config,
     )
-
-
-def _call_openai_compatible(messages: List[Dict], model: str, api_key: str, base_url: str) -> str:
-    import urllib.request
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    body = json.dumps({"model": model, "messages": messages, "max_tokens": 2000}).encode()
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        return f"Error calling model: {e}"
-
-
-def _call_anthropic(messages: List[Dict], model: str, api_key: str, base_url: str = "") -> str:
-    import urllib.request
-    system_msg = ""
-    chat_msgs = []
-    for m in messages:
-        if m["role"] == "system":
-            system_msg = m["content"]
-        else:
-            chat_msgs.append(m)
-    body = json.dumps({"model": model, "max_tokens": 2000, "system": system_msg, "messages": chat_msgs}).encode()
-    headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
-    endpoint = (base_url or "https://api.anthropic.com").rstrip("/")
-    req = urllib.request.Request(f"{endpoint}/v1/messages", data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
-            return "".join(b.get("text", "") for b in data.get("content", []))
-    except Exception as e:
-        return f"Error calling model: {e}"
-
-
-def _call_ollama(messages: List[Dict], model: str, base_url: str) -> str:
-    import urllib.request
-    body = json.dumps({"model": model, "messages": messages, "stream": False}).encode()
-    headers = {"Content-Type": "application/json"}
-    req = urllib.request.Request(f"{base_url.rstrip('/')}/api/chat", data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read())
-            return data.get("message", {}).get("content", "")
-    except Exception as e:
-        return f"Error calling model: {e}"
 
 
 # ============================================================
@@ -437,11 +283,9 @@ def sync_openclaw_workspace_memory(brain_key: str) -> None:
 
 
 def reload_runtime_configuration() -> None:
-    global config, runtime_config, _openclaw_gateway, _openclaw_gateway_checked
+    global config, runtime_config
     config = load_config()
     runtime_config = load_runtime_config(str(ROOT_DIR / "config.yaml"))
-    _openclaw_gateway = None
-    _openclaw_gateway_checked = False
     if memory_runtime is not None:
         memory_runtime.config.brains = runtime_config.brains
         memory_runtime.config.framework = runtime_config.framework

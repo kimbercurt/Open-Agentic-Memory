@@ -9,7 +9,9 @@ import json
 import math
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 import urllib.error
@@ -382,23 +384,6 @@ def _resolve_gateway_config(app_config: Optional[Config] = None) -> Optional[Dic
     }
 
 
-def _call_openclaw_gateway_model(messages: List[Dict[str, str]], model: str, gateway: Dict[str, str], thinking: str = "") -> str:
-    base_url = str(gateway.get("base_url", "") or "").rstrip("/")
-    token = str(gateway.get("token", "") or "").strip()
-    payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
-    if thinking:
-        payload["thinking"] = thinking
-        payload["reasoning_effort"] = thinking
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    data = _urlopen_json(
-        f"{base_url}/v1/chat/completions",
-        body=payload,
-        headers=headers,
-        timeout=90,
-    )
-    return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
-
-
 def _canonical_openclaw_model_ref(provider: str, model: str) -> str:
     clean_model = str(model or "").strip() or "gpt-5.4"
     if "/" in clean_model:
@@ -428,36 +413,75 @@ def _openclaw_gateway_thinking(level: str) -> str:
     return mapping.get(normalized, "")
 
 
-def _call_openclaw_gateway_runner(
+def _format_messages_for_cli(messages: List[Dict[str, str]]) -> str:
+    """Format a messages array into a single structured text for the OpenClaw CLI."""
+    system_text = ""
+    turns: List[str] = []
+
+    for msg in messages:
+        role = str(msg.get("role", "user"))
+        content = str(msg.get("content", ""))
+        if role == "system":
+            system_text = content
+        elif role == "user":
+            turns.append(f"User: {content}")
+        elif role == "assistant":
+            turns.append(f"Assistant: {content}")
+
+    parts: List[str] = []
+    if system_text:
+        parts.append(f"## System Instructions\n{system_text}")
+    if len(turns) > 1:
+        parts.append("## Conversation History\n" + "\n\n".join(turns[:-1]))
+        parts.append(f"## Current Message\n{turns[-1]}")
+    elif turns:
+        parts.append(turns[0])
+    if system_text:
+        parts.append("Respond following the system instructions above.")
+    return "\n\n".join(parts)
+
+
+def _call_openclaw_cli_runner(
     messages: List[Dict[str, str]],
-    provider: str,
-    model: str,
-    gateway: Dict[str, str],
     agent_id: str,
     thinking: str = "",
 ) -> str:
-    base_url = str(gateway.get("base_url", "") or "").rstrip("/")
-    token = str(gateway.get("token", "") or "").strip()
-    payload: Dict[str, Any] = {
-        "model": f"openclaw:{str(agent_id or 'main').strip() or 'main'}",
-        "messages": messages,
-        "max_tokens": 2000,
-    }
-    gateway_thinking = _openclaw_gateway_thinking(thinking)
-    if gateway_thinking:
-        payload["thinking"] = gateway_thinking
-    headers = {
-        "x-openclaw-agent-id": str(agent_id or "oam-model-runner"),
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    data = _urlopen_json(
-        f"{base_url}/v1/chat/completions",
-        body=payload,
-        headers=headers,
-        timeout=90,
-    )
-    return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+    """Call the OpenClaw CLI for model requests — supports per-request --thinking."""
+    binary = shutil.which("openclaw")
+    if not binary:
+        return "Error calling model: OpenClaw CLI not found in PATH."
+
+    formatted = _format_messages_for_cli(messages)
+    cmd = [binary, "agent", "--agent", agent_id, "--message", formatted, "--json"]
+
+    cli_thinking = _openclaw_gateway_thinking(thinking)
+    if cli_thinking:
+        cmd.extend(["--thinking", cli_thinking])
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            if stderr:
+                return f"Error calling model: {stderr[:500]}"
+            return "Error calling model: OpenClaw CLI returned non-zero exit code."
+        try:
+            payload = json.loads(result.stdout)
+            payloads = payload.get("result", {}).get("payloads", payload.get("payloads", []))
+            if isinstance(payloads, list):
+                texts = [p.get("text", "") for p in payloads if isinstance(p, dict) and p.get("text")]
+                if texts:
+                    return "\n\n".join(texts)
+            content = str(payload.get("content", "") or "")
+            if content:
+                return content
+            return result.stdout[:2000] if result.stdout else "No response from model."
+        except json.JSONDecodeError:
+            return result.stdout[:2000] if result.stdout else "No response from model."
+    except subprocess.TimeoutExpired:
+        return "Error calling model: request timed out (120s)."
+    except Exception as exc:
+        return f"Error calling model: {exc}"
 
 
 def _format_http_error(exc: urllib.error.HTTPError) -> str:
@@ -485,22 +509,6 @@ def _anthropic_direct_auth_supported(api_key: str, api_source: str) -> Tuple[boo
     return True, ""
 
 
-def _openclaw_runner_fallback_allowed(provider: str, gateway: Optional[Dict[str, str]], app_config: Optional[Config]) -> bool:
-    if gateway is None or app_config is None:
-        return False
-    if str(getattr(app_config, "framework", "") or "").strip().lower() != "openclaw":
-        return False
-    return _normalize_provider(provider) == "anthropic"
-
-
-def _prefer_gateway_transport(app_config: Optional[Config]) -> bool:
-    if app_config is None or getattr(app_config, "gateway", None) is None:
-        return False
-    if str(getattr(app_config, "framework", "") or "").strip().lower() == "openclaw":
-        return False
-    return bool(getattr(app_config.gateway, "prefer_for_models", False))
-
-
 def call_model_text(
     model_cfg: ModelConfig,
     messages: List[Dict[str, str]],
@@ -510,51 +518,22 @@ def call_model_text(
     provider = _normalize_provider(model_cfg.provider or "openai")
     model = str(model_cfg.model or "gpt-5.4").strip()
     base_url = str(model_cfg.base_url or "").strip()
-    gateway = _resolve_gateway_config(app_config)
-    gateway_preferred = bool(gateway and _prefer_gateway_transport(app_config))
     auth_method = _auth_method(model_cfg)
     reasoning_level = _normalize_reasoning_level(thinking)
 
-    if auth_method in {"oauth-gateway", "gateway"}:
-        if gateway is None:
-            return "Error calling model: OpenClaw gateway routing is enabled for this model, but no gateway was detected."
-        try:
-            return _call_openclaw_gateway_runner(
-                messages=messages,
-                provider=provider,
-                model=model,
-                gateway=gateway,
-                agent_id=_gateway_runner_agent_id(provider, model, app_config),
-                thinking=thinking,
-            )
-        except urllib.error.HTTPError as exc:
-            return f"Error calling model: {_format_http_error(exc)}"
-        except Exception as exc:
-            return f"Error calling model: {exc}"
+    # --- Route 1: OAuth / gateway providers — use OpenClaw CLI (supports --thinking) ---
+    if auth_method in {"oauth-gateway", "gateway"} or provider == "openai-codex":
+        agent_id = _gateway_runner_agent_id(provider, model, app_config)
+        return _call_openclaw_cli_runner(
+            messages=messages,
+            agent_id=agent_id,
+            thinking=thinking,
+        )
 
-    if gateway_preferred:
-        try:
-            gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-            if gateway_reply:
-                return gateway_reply
-        except Exception:
-            pass
-
+    # --- Route 2: Direct API providers — no fallbacks, errors reported as-is ---
     api_key, api_source = _resolve_configured_api_key(model_cfg.api_key, model_cfg.api_key_env, provider)
 
     try:
-        if provider == "openai-codex":
-            if gateway is None:
-                return "Error calling model: OpenAI/Codex OAuth requires the OpenClaw gateway."
-            return _call_openclaw_gateway_runner(
-                messages=messages,
-                provider=provider,
-                model=model,
-                gateway=gateway,
-                agent_id=_gateway_runner_agent_id(provider, model, app_config),
-                thinking=thinking,
-            )
-
         if provider in ("openai", "openrouter", "mistral", "openai-compatible", "custom"):
             endpoint = base_url or (
                 "https://api.openai.com/v1" if provider == "openai"
@@ -630,52 +609,10 @@ def call_model_text(
         return f"Error calling model: unsupported provider '{provider}'."
     except urllib.error.HTTPError as exc:
         error_text = _format_http_error(exc)
-        if _openclaw_runner_fallback_allowed(provider, gateway, app_config):
-            try:
-                gateway_reply = _call_openclaw_gateway_runner(
-                    messages=messages,
-                    provider=provider,
-                    model=model,
-                    gateway=gateway,
-                    agent_id=_gateway_runner_agent_id(provider, model, app_config),
-                    thinking=thinking,
-                )
-                if gateway_reply:
-                    return gateway_reply
-            except Exception:
-                pass
-        if gateway_preferred:
-            try:
-                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-                if gateway_reply:
-                    return gateway_reply
-            except Exception:
-                pass
         if api_source:
             return f"Error calling model: {error_text} (auth source: {api_source})"
         return f"Error calling model: {error_text}"
-    except Exception as exc:  # pragma: no cover - network dependent
-        if _openclaw_runner_fallback_allowed(provider, gateway, app_config):
-            try:
-                gateway_reply = _call_openclaw_gateway_runner(
-                    messages=messages,
-                    provider=provider,
-                    model=model,
-                    gateway=gateway,
-                    agent_id=_gateway_runner_agent_id(provider, model, app_config),
-                    thinking=thinking,
-                )
-                if gateway_reply:
-                    return gateway_reply
-            except Exception:
-                pass
-        if gateway_preferred:
-            try:
-                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-                if gateway_reply:
-                    return gateway_reply
-            except Exception:
-                pass
+    except Exception as exc:
         if api_source:
             return f"Error calling model: {exc} (auth source: {api_source})"
         return f"Error calling model: {exc}"
