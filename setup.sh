@@ -316,6 +316,16 @@ auth_path = state_dir / "agents" / "main" / "agent" / "auth-profiles.json"
 def b64(value: str) -> str:
     return base64.b64encode(str(value or "").encode("utf-8")).decode("ascii")
 
+def emit(source: str, effective_provider: str, auth_method: str, message: str, secret: str = "") -> None:
+    print("\t".join([
+        source,
+        effective_provider,
+        auth_method,
+        b64(message),
+        b64(secret),
+    ]))
+    raise SystemExit(0)
+
 def load_json(path: Path):
     if not path.exists():
         return {}
@@ -341,14 +351,16 @@ def profile_kind(profile):
 
 cfg = load_json(config_path)
 env_block = cfg.get("env", {}) if isinstance(cfg.get("env"), dict) else {}
-if env_name and str(env_block.get(env_name, "") or "").strip():
-    print("\t".join([
-        f"openclaw.env:{env_name}",
-        provider,
-        "direct",
-        b64(f"Found {provider} credentials in OpenClaw env ({env_name})."),
-    ]))
-    raise SystemExit(0)
+if env_name:
+    env_value = str(env_block.get(env_name, "") or "").strip()
+    if env_value:
+        emit(
+            f"openclaw.env:{env_name}",
+            provider,
+            "direct",
+            f"Found {provider} credentials in OpenClaw env ({env_name}).",
+            env_value,
+        )
 
 if not auth_path.exists():
     for candidate in (state_dir / "agents").glob("*/agent/auth-profiles.json"):
@@ -385,50 +397,42 @@ def sort_key(item):
 for profile_name, profile_provider, kind, profile in sorted(ranked, key=sort_key):
     source = f"openclaw.auth:{profile_name}"
     if profile_provider == "openai-codex" and kind == "oauth":
-        print("\t".join([
+        emit(
             source,
             "openai-codex",
             "oauth-gateway",
-            b64("Found OpenAI/Codex OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway."),
-        ]))
-        raise SystemExit(0)
+            "Found OpenAI/Codex OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway.",
+        )
 
     if profile_provider == "anthropic":
         secret = str(profile.get("apiKey") or profile.get("token") or "").strip()
-        if secret.startswith("sk-ant-oat"):
-            print("\t".join([
-                source,
-                "anthropic",
-                "unsupported-direct",
-                b64("Found an OpenClaw Anthropic setup/subscription token. Open Agentic Memory still needs a real ANTHROPIC_API_KEY for direct Anthropic calls."),
-            ]))
-            raise SystemExit(0)
         if secret:
-            print("\t".join([
+            emit(
                 source,
                 "anthropic",
                 "direct",
-                b64("Found Anthropic API credentials in OpenClaw."),
-            ]))
-            raise SystemExit(0)
+                "Found Anthropic API credentials in OpenClaw.",
+                secret,
+            )
 
     if kind in {"api-key", "token", "password"}:
-        print("\t".join([
-            source,
-            profile_provider,
-            "direct",
-            b64(f"Found {profile_provider} credentials in OpenClaw."),
-        ]))
-        raise SystemExit(0)
+        secret = str(profile.get("apiKey") or profile.get("token") or profile.get("password") or "").strip()
+        if secret:
+            emit(
+                source,
+                profile_provider,
+                "direct",
+                f"Found {profile_provider} credentials in OpenClaw.",
+                secret,
+            )
 
     if kind == "oauth":
-        print("\t".join([
+        emit(
             source,
             profile_provider,
             "oauth-gateway",
-            b64(f"Found {profile_provider} OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway."),
-        ]))
-        raise SystemExit(0)
+            f"Found {profile_provider} OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway.",
+        )
 PY
 }
 
@@ -511,6 +515,7 @@ resolve_provider_auth_setup() {
   local details_provider=""
   local details_auth_method=""
   local details_message_b64=""
+  local details_value_b64=""
 
   RESOLVED_AUTH_SOURCE=""
   RESOLVED_AUTH_VALUE=""
@@ -526,26 +531,22 @@ resolve_provider_auth_setup() {
 
   if [ -n "${!env_name:-}" ]; then
     RESOLVED_AUTH_SOURCE="env:${env_name}"
+    RESOLVED_AUTH_VALUE="$(trim "${!env_name}")"
     return 0
   fi
 
   if [ "$FRAMEWORK" = "openclaw" ]; then
     details="$(detect_openclaw_provider_auth_details "$provider" "$env_name" || true)"
     if [ -n "$details" ]; then
-      IFS=$'\t' read -r details_source details_provider details_auth_method details_message_b64 <<EOF
+      IFS=$'\t' read -r details_source details_provider details_auth_method details_message_b64 details_value_b64 <<EOF
 $details
 EOF
       RESOLVED_AUTH_SOURCE="$details_source"
       RESOLVED_EFFECTIVE_PROVIDER="${details_provider:-$provider}"
       RESOLVED_AUTH_METHOD="${details_auth_method:-direct}"
       RESOLVED_AUTH_MESSAGE="$(decode_b64 "$details_message_b64")"
-      if [ "$RESOLVED_AUTH_METHOD" != "unsupported-direct" ]; then
-        return 0
-      fi
-      warn "$RESOLVED_AUTH_MESSAGE"
-      info "Enter a real ${prompt_name} API key below, or leave it blank to configure it later."
-      RESOLVED_AUTH_SOURCE="missing"
-      RESOLVED_AUTH_MESSAGE=""
+      RESOLVED_AUTH_VALUE="$(decode_b64 "$details_value_b64")"
+      return 0
     fi
   fi
 

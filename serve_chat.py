@@ -457,11 +457,15 @@ def ensure_openclaw_registration() -> None:
         print(f"  OpenClaw bootstrap skipped: {exc}")
         return
 
-    fast_model = config.get("models", {}).get("fast", {}).get("model", "gpt-5.3-codex-spark")
-    primary_model = config.get("models", {}).get("primary", {}).get("model", fast_model)
-    runner_model = primary_model or fast_model
+    fast_cfg = config.get("models", {}).get("fast", {})
+    primary_cfg = config.get("models", {}).get("primary", {})
+    fast_model = fast_cfg.get("model", "gpt-5.3-codex-spark")
+    fast_provider = fast_cfg.get("provider", "openai")
+    primary_model = primary_cfg.get("model", fast_model)
+    primary_provider = primary_cfg.get("provider", fast_provider)
     try:
-        ensure_model_runner(runner_model, str(ROOT_DIR.resolve()))
+        ensure_model_runner(primary_model, str(ROOT_DIR.resolve()), provider=primary_provider)
+        ensure_model_runner(fast_model, str(ROOT_DIR.resolve()), provider=fast_provider)
     except Exception as exc:
         print(f"  OpenClaw model runner warning: {exc}")
     desired: List[Dict[str, str]] = []
@@ -486,6 +490,7 @@ def ensure_openclaw_registration() -> None:
                 brain_name=brain["name"],
                 fast_model=fast_model,
                 install_path=str(ROOT_DIR.resolve()),
+                fast_provider=fast_provider,
             )
             sync_openclaw_workspace_memory(brain["key"])
         except Exception as exc:
@@ -989,7 +994,9 @@ def _save_identity(identity: Dict[str, Any]):
     if framework == "openclaw":
         try:
             from openclaw_setup import register_brain
-            fast_model = config.get("models", {}).get("fast", {}).get("model", "gpt-5.3-codex-spark")
+            fast_cfg = config.get("models", {}).get("fast", {})
+            fast_model = fast_cfg.get("model", "gpt-5.3-codex-spark")
+            fast_provider = fast_cfg.get("provider", "openai")
             brain_name = identity.get("name", "Assistant")
 
             result = register_brain(
@@ -997,6 +1004,7 @@ def _save_identity(identity: Dict[str, Any]):
                 brain_name=brain_name,
                 fast_model=fast_model,
                 install_path=str(install_path.resolve()),
+                fast_provider=fast_provider,
             )
             print(f"  OpenClaw: Registered {result['total_agents']} agents for brain '{brain_key}'")
             if result.get("created"):
@@ -1008,7 +1016,7 @@ def _save_identity(identity: Dict[str, Any]):
             sync_openclaw_workspace_memory(brain_key)
         except Exception as e:
             print(f"  OpenClaw registration failed: {e}")
-            print(f"  You can register manually: python openclaw_setup.py register {brain_key} \"{brain_name}\" {fast_model} .")
+            print(f"  You can register manually: python openclaw_setup.py register {brain_key} \"{brain_name}\" {fast_model} . {fast_provider}")
             print()
 
 
