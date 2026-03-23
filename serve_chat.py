@@ -17,6 +17,7 @@ import threading
 import textwrap
 import time
 import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -388,7 +389,6 @@ Until you have enough info, just chat normally. Do NOT output the JSON block unt
 # FastAPI app
 # ============================================================
 
-app = FastAPI()
 config = load_config()
 runtime_config = load_runtime_config(str(ROOT_DIR / "config.yaml"))
 memory_runtime: Optional[MemoryRuntime] = None
@@ -418,18 +418,20 @@ def get_memory_runtime() -> MemoryRuntime:
     return memory_runtime
 
 
-@app.on_event("startup")
-async def app_startup() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     ensure_openclaw_registration()
     get_memory_runtime()
+    try:
+        yield
+    finally:
+        global memory_runtime
+        if memory_runtime is not None:
+            memory_runtime.close()
+            memory_runtime = None
 
 
-@app.on_event("shutdown")
-async def app_shutdown() -> None:
-    global memory_runtime
-    if memory_runtime is not None:
-        memory_runtime.close()
-        memory_runtime = None
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -893,12 +895,11 @@ CHAT_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Open Agentic Memory — Agent Setup</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #0a0a0f;
     color: #e0e0e8;
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -952,7 +953,7 @@ CHAT_HTML = """<!DOCTYPE html>
     border: 1px solid #1e1e2e;
     padding: 5px 12px;
     border-radius: 8px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   }
   .header .framework-tag {
     font-size: 10px;
@@ -1039,7 +1040,7 @@ CHAT_HTML = """<!DOCTYPE html>
     padding: 14px 18px;
     color: #e0e0e8;
     font-size: 14px;
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     outline: none;
     transition: border-color 0.2s;
   }
@@ -1054,7 +1055,7 @@ CHAT_HTML = """<!DOCTYPE html>
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     transition: all 0.2s;
     letter-spacing: 0.3px;
   }
@@ -1159,7 +1160,7 @@ CHAT_HTML = """<!DOCTYPE html>
           doneEl.innerHTML = '<h3>All Chatbots Configured</h3>'
             + '<p>' + brainList + '</p>'
             + '<p style="margin-top:12px;font-size:12px;">' + completed + ' chatbot(s) with full agentic memory registered.</p>'
-            + '<button onclick="window.location.href=\\'/chat\\'" style="margin-top:18px;background:linear-gradient(135deg,#10b981,#059669);border:none;border-radius:14px;padding:14px 36px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;letter-spacing:0.3px;transition:all 0.2s;box-shadow:0 4px 16px rgba(16,185,129,0.3);" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'none\\'">Launch</button>';
+            + '<button onclick="window.location.href=\\'/chat\\'" style="margin-top:18px;background:linear-gradient(135deg,#10b981,#059669);border:none;border-radius:14px;padding:14px 36px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif;letter-spacing:0.3px;transition:all 0.2s;box-shadow:0 4px 16px rgba(16,185,129,0.3);" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'none\\'">Launch</button>';
           inputEl.placeholder = 'All configured — click Launch above';
           inputEl.disabled = true;
           sendBtn.disabled = true;
@@ -1168,7 +1169,7 @@ CHAT_HTML = """<!DOCTYPE html>
           doneEl.innerHTML = '<h3>' + (data.identity.name || 'Agent') + ' Configured</h3>'
             + '<p><strong>' + (data.identity.name || 'Agent') + '</strong> — ' + (data.identity.role || '') + '</p>'
             + '<p style="margin-top:8px;color:var(--dim);">' + completed + ' of ' + total + ' chatbots done.</p>'
-            + '<button onclick="startNextBrain()" style="margin-top:18px;background:linear-gradient(135deg,#4a9eff,#6366f1);border:none;border-radius:14px;padding:14px 36px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;letter-spacing:0.3px;transition:all 0.2s;box-shadow:0 4px 16px rgba(74,158,255,0.3);" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'none\\'">Next Chatbot (' + (completed + 1) + ' of ' + total + ')</button>';
+            + '<button onclick="startNextBrain()" style="margin-top:18px;background:linear-gradient(135deg,#4a9eff,#6366f1);border:none;border-radius:14px;padding:14px 36px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:system-ui,sans-serif;letter-spacing:0.3px;transition:all 0.2s;box-shadow:0 4px 16px rgba(74,158,255,0.3);" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'none\\'">Next Chatbot (' + (completed + 1) + ' of ' + total + ')</button>';
         }
         messagesEl.appendChild(doneEl);
         messagesEl.scrollTop = messagesEl.scrollHeight;

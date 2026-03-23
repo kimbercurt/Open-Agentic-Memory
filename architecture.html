@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Open Agentic Memory Architecture</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
@@ -29,12 +27,14 @@
     --glow-purple: rgba(139, 92, 246, 0.15);
     --glow-amber: rgba(245, 158, 11, 0.15);
     --glow-green: rgba(16, 185, 129, 0.15);
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   }
 
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: var(--font-sans);
     min-height: 100vh;
     overflow-x: hidden;
   }
@@ -468,7 +468,7 @@
   }
   .agent-card .agent-model {
     font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     color: var(--text-dim);
     background: rgba(255,255,255,0.05);
     padding: 2px 8px;
@@ -488,7 +488,7 @@
   }
   .agent-card .tool-tag {
     font-size: 10px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     background: rgba(74, 158, 255, 0.1);
     color: var(--accent-blue);
     padding: 3px 8px;
@@ -692,7 +692,7 @@
     border-radius: 12px;
     padding: 20px;
     margin: 20px 0;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.7;
     color: var(--text-dim);
@@ -969,12 +969,12 @@
       ctx.fill();
 
       // Label
-      ctx.font = '700 18px Inter, sans-serif';
+      ctx.font = '700 18px system-ui, sans-serif';
       ctx.fillStyle = color;
       ctx.textAlign = 'center';
       ctx.globalAlpha = 0.9;
       ctx.fillText(label, x, y + r + 28);
-      ctx.font = '12px Inter, sans-serif';
+      ctx.font = '12px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
       ctx.fillText(label==='Brain A'?'Primary Assistant':'Secondary Assistant', x, y+r+44);
       ctx.globalAlpha = 1;
@@ -1003,7 +1003,7 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
       // Label
-      ctx.font = '600 13px Inter, sans-serif';
+      ctx.font = '600 13px system-ui, sans-serif';
       ctx.fillStyle = color;
       ctx.textAlign = 'center';
       ctx.fillText(label, x, y+r+22);
@@ -1038,7 +1038,7 @@
         ctx.globalAlpha = 1;
         // Label on hover
         if(n.label && (hover || n.size > 4)){
-          ctx.font = '11px Inter, sans-serif';
+          ctx.font = '11px system-ui, sans-serif';
           ctx.fillStyle = 'rgba(255,255,255,'+(hover?0.9:0.45)+')';
           ctx.textAlign = 'center';
           ctx.fillText(n.label, p.x, p.y - n.size - 7);
@@ -1096,7 +1096,7 @@
 
     // Model labels floating near brains
     function drawModelLabels(time){
-      ctx.font = '500 11px JetBrains Mono, monospace';
+      ctx.font = '500 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
       ctx.textAlign = 'center';
 
       // GPT-5.4 near each brain
@@ -1115,7 +1115,7 @@
       ctx.save();
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = RECALL;
-      ctx.font = '600 11px JetBrains Mono, monospace';
+      ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
       // Brain A -> Embed
       const brainAEmbedMx = (brainA.x + embedNode.x) / 2;
       const brainAEmbedMy = (brainA.y + embedNode.y) / 2;
@@ -1138,7 +1138,7 @@
       ctx.save();
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = OBSERVER;
-      ctx.font = '600 11px JetBrains Mono, monospace';
+      ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
       // Brain A -> Vault
       const brainAVaultMx = (brainA.x + vaultNode.x) / 2;
       const brainAVaultMy = (brainA.y + vaultNode.y) / 2;
@@ -1160,7 +1160,7 @@
       // Handoff label centered between the two brains
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = '#ffffff';
-      ctx.font = '500 10px JetBrains Mono, monospace';
+      ctx.font = '500 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
       ctx.fillText('Handoff', (brainA.x + brainB.x) / 2, brainA.y + 4);
       ctx.globalAlpha = 1;
 
@@ -2158,11 +2158,11 @@
       // Label
       if (v.label) {
         if (isBold) {
-          ctx.font = '800 14px Inter, sans-serif';
+          ctx.font = '800 14px system-ui, sans-serif';
           ctx.fillStyle = v.color;
           ctx.globalAlpha = alpha * 0.95;
         } else {
-          ctx.font = '600 11px Inter, sans-serif';
+          ctx.font = '600 11px system-ui, sans-serif';
           ctx.fillStyle = v.color;
           ctx.globalAlpha = alpha * 0.8;
         }
@@ -2424,7 +2424,7 @@
 
       // Label when orbiting (phase 0.15-0.75)
       if (phase > 0.12 && phase < 0.78) {
-        ctx.font = '500 9px JetBrains Mono, monospace';
+        ctx.font = '500 9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
         ctx.fillStyle = color;
         ctx.globalAlpha = 0.45;
         ctx.textAlign = 'center';

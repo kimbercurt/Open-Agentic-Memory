@@ -1,0 +1,25 @@
+name: Feature Request
+description: Suggest an improvement for Open Agentic Memory
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What are you trying to do, and what is missing today?
+      placeholder: Describe the user need or workflow gap.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Share your preferred solution or API shape if you have one.
+      placeholder: Describe what you would like to see.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that would help evaluate the request.
