@@ -452,12 +452,18 @@ def ensure_openclaw_registration() -> None:
         return
 
     try:
-        from openclaw_setup import register_brain
+        from openclaw_setup import ensure_model_runner, register_brain
     except Exception as exc:
         print(f"  OpenClaw bootstrap skipped: {exc}")
         return
 
     fast_model = config.get("models", {}).get("fast", {}).get("model", "gpt-5.3-codex-spark")
+    primary_model = config.get("models", {}).get("primary", {}).get("model", fast_model)
+    runner_model = primary_model or fast_model
+    try:
+        ensure_model_runner(runner_model, str(ROOT_DIR.resolve()))
+    except Exception as exc:
+        print(f"  OpenClaw model runner warning: {exc}")
     desired: List[Dict[str, str]] = []
     seen = set()
 

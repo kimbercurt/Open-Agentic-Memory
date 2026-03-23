@@ -10,10 +10,11 @@ models:
   # Primary model: your main chatbot LLM (needs large context, strong reasoning)
   # Examples: gpt-5.4, claude-opus-4-6, llama4:maverick, gemini-3.1-pro
   primary:
-    provider: "openai"           # openai, anthropic, ollama, openrouter, etc.
+    provider: "openai"           # openai, openai-codex, anthropic, ollama, openrouter, etc.
     model: "gpt-5.4"
     api_key_env: "OPENAI_API_KEY"  # environment variable name holding the key
     api_key: ""                 # optional: raw key if you want config-local auth
+    auth_method: "direct"       # direct, oauth-gateway
     # base_url: ""               # optional: override API endpoint
 
   # Fast model: for the 13 specialized agents (needs tool calling, speed > depth)
@@ -23,6 +24,7 @@ models:
     model: "gpt-5.3-codex-spark"
     api_key_env: "OPENAI_API_KEY"
     api_key: ""
+    auth_method: "direct"
     thinking: "high"             # reasoning effort: low, medium, high, max
 
 # ============================================================
@@ -46,7 +48,8 @@ gateway:
   port: 0
   token_env: "OPENCLAW_GATEWAY_TOKEN"
   token: ""                      # optional: setup can write the detected gateway token here
-  prefer_for_models: false       # leave false unless you explicitly want model traffic to use the OpenClaw gateway
+  prefer_for_models: false       # legacy/global switch; per-model auth_method is preferred
+  model_runner_agent_id: "oam-model-runner"
 
 # ============================================================
 # Storage — where memories live

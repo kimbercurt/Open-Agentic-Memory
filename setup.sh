@@ -38,6 +38,8 @@ PRIMARY_BASE_URL=""
 API_KEY_ENV=""
 PRIMARY_API_KEY_VALUE=""
 PRIMARY_API_KEY_SOURCE=""
+PRIMARY_AUTH_METHOD="direct"
+FAST_AUTH_METHOD="direct"
 
 EMBED_PROVIDER=""
 EMBED_MODEL=""
@@ -55,6 +57,7 @@ GATEWAY_PORT="0"
 GATEWAY_TOKEN_ENV="OPENCLAW_GATEWAY_TOKEN"
 GATEWAY_TOKEN=""
 GATEWAY_PREFER_FOR_MODELS="false"
+GATEWAY_MODEL_RUNNER_AGENT_ID="oam-model-runner"
 
 OPENCLAW_EMBED_STRATEGY="builtin"
 OPENCLAW_MEMORYSEARCH_PROVIDER=""
@@ -148,6 +151,14 @@ print(json.dumps(sys.argv[1]))
 PY
 }
 
+decode_b64() {
+  python3 - "$1" <<'PY'
+import base64, sys
+value = str(sys.argv[1] or "")
+print(base64.b64decode(value.encode("utf-8")).decode("utf-8") if value else "")
+PY
+}
+
 slugify() {
   local raw
   raw="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
@@ -163,6 +174,7 @@ provider_api_key_env() {
   case "$provider" in
     anthropic) printf '%s' "ANTHROPIC_API_KEY" ;;
     openai) printf '%s' "OPENAI_API_KEY" ;;
+    openai-codex) printf '%s' "" ;;
     openrouter) printf '%s' "OPENROUTER_API_KEY" ;;
     gemini|google) printf '%s' "GEMINI_API_KEY" ;;
     mistral) printf '%s' "MISTRAL_API_KEY" ;;
@@ -179,6 +191,7 @@ provider_display_name() {
   case "$provider" in
     anthropic) printf '%s' "Anthropic" ;;
     openai) printf '%s' "OpenAI" ;;
+    openai-codex) printf '%s' "OpenAI/Codex OAuth" ;;
     openrouter) printf '%s' "OpenRouter" ;;
     gemini|google) printf '%s' "Gemini" ;;
     mistral) printf '%s' "Mistral" ;;
@@ -270,6 +283,155 @@ for profile_name, profile in profiles.items():
 PY
 }
 
+detect_openclaw_provider_auth_details() {
+  local provider="$1"
+  local env_name="$2"
+
+  python3 - "$provider" "$env_name" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+provider = str(sys.argv[1] or "").strip().lower()
+env_name = str(sys.argv[2] or "").strip()
+if provider == "google":
+    provider = "gemini"
+
+aliases = {
+    "anthropic": {"anthropic"},
+    "openai": {"openai", "openai-codex"},
+    "openai-codex": {"openai-codex"},
+    "openrouter": {"openrouter"},
+    "gemini": {"gemini", "google"},
+    "mistral": {"mistral"},
+    "voyage": {"voyage"},
+    "xai": {"xai"},
+}.get(provider, {provider} if provider else set())
+
+state_dir = Path.home() / ".openclaw"
+config_path = state_dir / "openclaw.json"
+auth_path = state_dir / "agents" / "main" / "agent" / "auth-profiles.json"
+
+def b64(value: str) -> str:
+    return base64.b64encode(str(value or "").encode("utf-8")).decode("ascii")
+
+def load_json(path: Path):
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def profile_kind(profile):
+    if not isinstance(profile, dict):
+        return "unknown"
+    profile_type = str(profile.get("type", "") or "").strip().lower()
+    if profile_type == "oauth" or profile.get("access") or profile.get("refresh"):
+        return "oauth"
+    if profile.get("apiKey"):
+        return "api-key"
+    if profile.get("token"):
+        return "token"
+    if profile.get("password"):
+        return "password"
+    return profile_type or "unknown"
+
+cfg = load_json(config_path)
+env_block = cfg.get("env", {}) if isinstance(cfg.get("env"), dict) else {}
+if env_name and str(env_block.get(env_name, "") or "").strip():
+    print("\t".join([
+        f"openclaw.env:{env_name}",
+        provider,
+        "direct",
+        b64(f"Found {provider} credentials in OpenClaw env ({env_name})."),
+    ]))
+    raise SystemExit(0)
+
+if not auth_path.exists():
+    for candidate in (state_dir / "agents").glob("*/agent/auth-profiles.json"):
+        auth_path = candidate
+        break
+
+auth_payload = load_json(auth_path)
+profiles = auth_payload.get("profiles", {}) if isinstance(auth_payload.get("profiles"), dict) else {}
+
+ranked = []
+for profile_name, profile in profiles.items():
+    if not isinstance(profile, dict):
+        continue
+    profile_provider = str(profile.get("provider", "") or "").strip().lower()
+    if profile_provider == "google":
+        profile_provider = "gemini"
+    if profile_provider not in aliases:
+        continue
+    kind = profile_kind(profile)
+    ranked.append((profile_name, profile_provider, kind, profile))
+
+def sort_key(item):
+    profile_name, profile_provider, kind, _ = item
+    if provider == "openai" and profile_provider == "openai-codex" and kind == "oauth":
+        return (0, profile_name)
+    if kind == "api-key":
+        return (1, profile_name)
+    if kind == "token":
+        return (2, profile_name)
+    if kind == "oauth":
+        return (3, profile_name)
+    return (4, profile_name)
+
+for profile_name, profile_provider, kind, profile in sorted(ranked, key=sort_key):
+    source = f"openclaw.auth:{profile_name}"
+    if profile_provider == "openai-codex" and kind == "oauth":
+        print("\t".join([
+            source,
+            "openai-codex",
+            "oauth-gateway",
+            b64("Found OpenAI/Codex OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway."),
+        ]))
+        raise SystemExit(0)
+
+    if profile_provider == "anthropic":
+        secret = str(profile.get("apiKey") or profile.get("token") or "").strip()
+        if secret.startswith("sk-ant-oat"):
+            print("\t".join([
+                source,
+                "anthropic",
+                "unsupported-direct",
+                b64("Found an OpenClaw Anthropic setup/subscription token. Open Agentic Memory still needs a real ANTHROPIC_API_KEY for direct Anthropic calls."),
+            ]))
+            raise SystemExit(0)
+        if secret:
+            print("\t".join([
+                source,
+                "anthropic",
+                "direct",
+                b64("Found Anthropic API credentials in OpenClaw."),
+            ]))
+            raise SystemExit(0)
+
+    if kind in {"api-key", "token", "password"}:
+        print("\t".join([
+            source,
+            profile_provider,
+            "direct",
+            b64(f"Found {profile_provider} credentials in OpenClaw."),
+        ]))
+        raise SystemExit(0)
+
+    if kind == "oauth":
+        print("\t".join([
+            source,
+            profile_provider,
+            "oauth-gateway",
+            b64(f"Found {profile_provider} OAuth credentials in OpenClaw. Model calls will route through the OpenClaw gateway."),
+        ]))
+        raise SystemExit(0)
+PY
+}
+
 detect_openclaw_gateway_port() {
   python3 - <<'PY'
 import json
@@ -344,13 +506,21 @@ resolve_provider_auth_setup() {
   local provider="$1"
   local env_name="$2"
   local prompt_name="$3"
-  local openclaw_source=""
+  local details=""
+  local details_source=""
+  local details_provider=""
+  local details_auth_method=""
+  local details_message_b64=""
 
   RESOLVED_AUTH_SOURCE=""
   RESOLVED_AUTH_VALUE=""
+  RESOLVED_EFFECTIVE_PROVIDER="$provider"
+  RESOLVED_AUTH_METHOD="direct"
+  RESOLVED_AUTH_MESSAGE=""
 
   if [ -z "$env_name" ]; then
     RESOLVED_AUTH_SOURCE="not-needed"
+    RESOLVED_AUTH_METHOD="not-needed"
     return 0
   fi
 
@@ -360,10 +530,22 @@ resolve_provider_auth_setup() {
   fi
 
   if [ "$FRAMEWORK" = "openclaw" ]; then
-    openclaw_source="$(detect_openclaw_provider_auth_source "$provider" "$env_name" || true)"
-    if [ -n "$openclaw_source" ]; then
-      RESOLVED_AUTH_SOURCE="$openclaw_source"
-      return 0
+    details="$(detect_openclaw_provider_auth_details "$provider" "$env_name" || true)"
+    if [ -n "$details" ]; then
+      IFS=$'\t' read -r details_source details_provider details_auth_method details_message_b64 <<EOF
+$details
+EOF
+      RESOLVED_AUTH_SOURCE="$details_source"
+      RESOLVED_EFFECTIVE_PROVIDER="${details_provider:-$provider}"
+      RESOLVED_AUTH_METHOD="${details_auth_method:-direct}"
+      RESOLVED_AUTH_MESSAGE="$(decode_b64 "$details_message_b64")"
+      if [ "$RESOLVED_AUTH_METHOD" != "unsupported-direct" ]; then
+        return 0
+      fi
+      warn "$RESOLVED_AUTH_MESSAGE"
+      info "Enter a real ${prompt_name} API key below, or leave it blank to configure it later."
+      RESOLVED_AUTH_SOURCE="missing"
+      RESOLVED_AUTH_MESSAGE=""
     fi
   fi
 
@@ -375,10 +557,13 @@ resolve_provider_auth_setup() {
     upsert_env_file "$env_name" "$RESOLVED_AUTH_VALUE" ".env"
     export "${env_name}=${RESOLVED_AUTH_VALUE}"
     RESOLVED_AUTH_SOURCE="dotenv:${env_name}"
+    RESOLVED_AUTH_METHOD="direct"
+    RESOLVED_EFFECTIVE_PROVIDER="$provider"
     return 0
   fi
 
   RESOLVED_AUTH_SOURCE="missing"
+  RESOLVED_AUTH_METHOD="missing"
 }
 
 brain_key_exists() {
@@ -1229,13 +1414,29 @@ fi
 resolve_provider_auth_setup "$PROVIDER" "$API_KEY_ENV" "$(provider_display_name "$PROVIDER")"
 PRIMARY_API_KEY_VALUE="$RESOLVED_AUTH_VALUE"
 PRIMARY_API_KEY_SOURCE="$RESOLVED_AUTH_SOURCE"
+PRIMARY_AUTH_METHOD="$RESOLVED_AUTH_METHOD"
+FAST_AUTH_METHOD="$PRIMARY_AUTH_METHOD"
+
+if [ -n "${RESOLVED_EFFECTIVE_PROVIDER:-}" ] && [ "$RESOLVED_EFFECTIVE_PROVIDER" != "$PROVIDER" ]; then
+  PROVIDER="$RESOLVED_EFFECTIVE_PROVIDER"
+fi
+
+if [ "$PRIMARY_AUTH_METHOD" = "oauth-gateway" ]; then
+  GATEWAY_PREFER_FOR_MODELS="true"
+  PRIMARY_API_KEY_VALUE=""
+  API_KEY_ENV=""
+fi
 
 case "$PRIMARY_API_KEY_SOURCE" in
   env:*)
     success "$API_KEY_ENV is already set in the current environment."
     ;;
   openclaw.env:*|openclaw.auth:*)
-    success "$(provider_display_name "$PROVIDER") credentials found in OpenClaw (${PRIMARY_API_KEY_SOURCE})."
+    if [ -n "${RESOLVED_AUTH_MESSAGE:-}" ]; then
+      success "$RESOLVED_AUTH_MESSAGE"
+    else
+      success "$(provider_display_name "$PROVIDER") credentials found in OpenClaw (${PRIMARY_API_KEY_SOURCE})."
+    fi
     ;;
   dotenv:*)
     success "$(provider_display_name "$PROVIDER") API key saved to .env."
@@ -1250,6 +1451,11 @@ case "$PRIMARY_API_KEY_SOURCE" in
     fi
     ;;
 esac
+
+if [ "$PRIMARY_AUTH_METHOD" = "oauth-gateway" ] && [ "$GATEWAY_PORT" = "0" ]; then
+  warn "OpenClaw OAuth was detected, but the gateway metadata is missing."
+  info "Start the OpenClaw gateway before launching chat so OAuth-backed model calls can be routed correctly."
+fi
 
 if [ -n "$EMBED_KEY_ENV" ]; then
   if [ "$EMBED_KEY_ENV" = "$API_KEY_ENV" ] && [ "$PRIMARY_API_KEY_SOURCE" != "missing" ] && [ "$PRIMARY_API_KEY_SOURCE" != "not-needed" ]; then
@@ -1284,7 +1490,7 @@ else
   info "No embedding API key is needed for this selection."
 fi
 
-if [ "$FRAMEWORK" = "openclaw" ] && [ "$PRIMARY_API_KEY_SOURCE" = "missing" ] && [ -n "$API_KEY_ENV" ]; then
+if [ "$FRAMEWORK" = "openclaw" ] && [ "$PRIMARY_API_KEY_SOURCE" = "missing" ] && [ "$PRIMARY_AUTH_METHOD" != "oauth-gateway" ] && [ -n "$API_KEY_ENV" ]; then
   warn "No direct ${PROVIDER} credentials were detected for model calls."
   info "Add ${API_KEY_ENV} to .env, export it in your shell, or configure that provider in OpenClaw auth before launching chat."
 fi
@@ -1340,12 +1546,14 @@ models:
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
     api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
+    auth_method: "$(yaml_quote "$PRIMARY_AUTH_METHOD")"
   fast:
     provider: "$(yaml_quote "$PROVIDER")"
     model: "$(yaml_quote "$FAST_MODEL")"
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
     api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
+    auth_method: "$(yaml_quote "$FAST_AUTH_METHOD")"
     thinking: "high"
 
 embedding:
@@ -1364,6 +1572,7 @@ gateway:
   token_env: "$(yaml_quote "$GATEWAY_TOKEN_ENV")"
   token: "$(yaml_quote "$GATEWAY_TOKEN")"
   prefer_for_models: $GATEWAY_PREFER_FOR_MODELS
+  model_runner_agent_id: "$(yaml_quote "$GATEWAY_MODEL_RUNNER_AGENT_ID")"
 
 storage:
   vector:

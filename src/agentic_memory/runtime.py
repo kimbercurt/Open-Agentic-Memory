@@ -14,6 +14,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 import warnings
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -161,6 +162,7 @@ def _provider_api_key_env(provider: str) -> str:
     mapping = {
         "anthropic": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
+        "openai-codex": "OPENAI_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "gemini": "GEMINI_API_KEY",
         "mistral": "MISTRAL_API_KEY",
@@ -237,6 +239,7 @@ def _openclaw_provider_aliases(provider: str) -> List[str]:
     aliases = {
         "anthropic": ["anthropic"],
         "openai": ["openai"],
+        "openai-codex": ["openai-codex"],
         "openrouter": ["openrouter"],
         "gemini": ["gemini", "google"],
         "mistral": ["mistral"],
@@ -396,6 +399,99 @@ def _call_openclaw_gateway_model(messages: List[Dict[str, str]], model: str, gat
     return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
 
 
+def _gateway_runner_agent_id(app_config: Optional[Config]) -> str:
+    if app_config is None or getattr(app_config, "gateway", None) is None:
+        return "oam-model-runner"
+    return str(getattr(app_config.gateway, "model_runner_agent_id", "oam-model-runner") or "oam-model-runner").strip() or "oam-model-runner"
+
+
+def _openclaw_gateway_model_name(provider: str, model: str) -> str:
+    clean_model = str(model or "").strip() or "gpt-5.4"
+    if "/" in clean_model:
+        return clean_model
+    normalized = _normalize_provider(provider)
+    if normalized == "openai-codex":
+        return f"openai-codex/{clean_model}"
+    return clean_model
+
+
+def _openclaw_gateway_thinking(level: str) -> str:
+    normalized = _normalize_reasoning_level(level)
+    mapping = {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "xhigh",
+    }
+    return mapping.get(normalized, "")
+
+
+def _call_openclaw_gateway_runner(
+    messages: List[Dict[str, str]],
+    provider: str,
+    model: str,
+    gateway: Dict[str, str],
+    agent_id: str,
+    thinking: str = "",
+) -> str:
+    base_url = str(gateway.get("base_url", "") or "").rstrip("/")
+    token = str(gateway.get("token", "") or "").strip()
+    payload: Dict[str, Any] = {
+        "model": _openclaw_gateway_model_name(provider, model),
+        "messages": messages,
+        "max_tokens": 2000,
+    }
+    gateway_thinking = _openclaw_gateway_thinking(thinking)
+    if gateway_thinking:
+        payload["thinking"] = gateway_thinking
+    headers = {
+        "x-openclaw-agent-id": str(agent_id or "oam-model-runner"),
+        # Force stateless execution; OAM already sends the full prompt/history.
+        "x-openclaw-session-key": f"oam:{uuid.uuid4().hex}",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = _urlopen_json(
+        f"{base_url}/v1/chat/completions",
+        body=payload,
+        headers=headers,
+        timeout=90,
+    )
+    return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+
+
+def _format_http_error(exc: urllib.error.HTTPError) -> str:
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", "replace").strip()
+    except Exception:
+        body = ""
+    if body:
+        compact = normalize_text(body)
+        if len(compact) > 500:
+            compact = compact[:497].rstrip() + "..."
+        return f"HTTP {exc.code}: {compact}"
+    return f"HTTP {exc.code}: {exc.reason}"
+
+
+def _auth_method(model_cfg: ModelConfig) -> str:
+    return str(getattr(model_cfg, "auth_method", "") or "direct").strip().lower()
+
+
+def _anthropic_direct_auth_supported(api_key: str, api_source: str) -> Tuple[bool, str]:
+    secret = str(api_key or "").strip()
+    source = str(api_source or "").strip()
+    if not secret:
+        return False, "missing API key for provider anthropic."
+    if source.startswith("openclaw.auth:") and secret.startswith("sk-ant-oat"):
+        return (
+            False,
+            "OpenClaw's stored Anthropic token is not a raw ANTHROPIC_API_KEY. "
+            "Set ANTHROPIC_API_KEY in .env or configure a real Anthropic API key in OpenClaw env.",
+        )
+    return True, ""
+
+
 def _prefer_gateway_transport(app_config: Optional[Config]) -> bool:
     if app_config is None or getattr(app_config, "gateway", None) is None:
         return False
@@ -415,7 +511,25 @@ def call_model_text(
     base_url = str(model_cfg.base_url or "").strip()
     gateway = _resolve_gateway_config(app_config)
     gateway_preferred = bool(gateway and _prefer_gateway_transport(app_config))
+    auth_method = _auth_method(model_cfg)
     reasoning_level = _normalize_reasoning_level(thinking)
+
+    if auth_method in {"oauth-gateway", "gateway"}:
+        if gateway is None:
+            return "Error calling model: OpenClaw gateway routing is enabled for this model, but no gateway was detected."
+        try:
+            return _call_openclaw_gateway_runner(
+                messages=messages,
+                provider=provider,
+                model=model,
+                gateway=gateway,
+                agent_id=_gateway_runner_agent_id(app_config),
+                thinking=thinking,
+            )
+        except urllib.error.HTTPError as exc:
+            return f"Error calling model: {_format_http_error(exc)}"
+        except Exception as exc:
+            return f"Error calling model: {exc}"
 
     if gateway_preferred:
         try:
@@ -428,6 +542,18 @@ def call_model_text(
     api_key, api_source = _resolve_configured_api_key(model_cfg.api_key, model_cfg.api_key_env, provider)
 
     try:
+        if provider == "openai-codex":
+            if gateway is None:
+                return "Error calling model: OpenAI/Codex OAuth requires the OpenClaw gateway."
+            return _call_openclaw_gateway_runner(
+                messages=messages,
+                provider=provider,
+                model=model,
+                gateway=gateway,
+                agent_id=_gateway_runner_agent_id(app_config),
+                thinking=thinking,
+            )
+
         if provider in ("openai", "openrouter", "mistral", "openai-compatible", "custom"):
             endpoint = base_url or (
                 "https://api.openai.com/v1" if provider == "openai"
@@ -450,8 +576,9 @@ def call_model_text(
             return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
 
         if provider == "anthropic":
-            if not api_key:
-                return "Error calling model: missing API key for provider anthropic."
+            direct_ok, direct_error = _anthropic_direct_auth_supported(api_key, api_source)
+            if not direct_ok:
+                return f"Error calling model: {direct_error}"
             endpoint = (base_url or "https://api.anthropic.com").rstrip("/")
             system_text = ""
             chat_messages: List[Dict[str, str]] = []
@@ -500,6 +627,18 @@ def call_model_text(
             return str(data.get("message", {}).get("content", "") or "")
 
         return f"Error calling model: unsupported provider '{provider}'."
+    except urllib.error.HTTPError as exc:
+        error_text = _format_http_error(exc)
+        if gateway_preferred:
+            try:
+                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
+                if gateway_reply:
+                    return gateway_reply
+            except Exception:
+                pass
+        if api_source:
+            return f"Error calling model: {error_text} (auth source: {api_source})"
+        return f"Error calling model: {error_text}"
     except Exception as exc:  # pragma: no cover - network dependent
         if gateway_preferred:
             try:

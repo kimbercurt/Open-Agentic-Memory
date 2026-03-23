@@ -72,6 +72,7 @@ class ModelConfig:
     api_key_env: str = "OPENAI_API_KEY"
     api_key: str = ""
     base_url: str = ""
+    auth_method: str = "direct"
     thinking: str = "high"
 
 
@@ -125,6 +126,7 @@ class GatewayConfig:
     token_env: str = "OPENCLAW_GATEWAY_TOKEN"
     token: str = ""
     prefer_for_models: bool = False
+    model_runner_agent_id: str = "oam-model-runner"
 
 
 @dataclass
@@ -182,6 +184,7 @@ def load_config(path: str = "config.yaml") -> Config:
             api_key_env=primary.get("api_key_env", "OPENAI_API_KEY"),
             api_key=primary.get("api_key", ""),
             base_url=primary.get("base_url", ""),
+            auth_method=primary.get("auth_method", "direct"),
         ),
         fast_model=ModelConfig(
             provider=fast.get("provider", "openai"),
@@ -189,6 +192,7 @@ def load_config(path: str = "config.yaml") -> Config:
             api_key_env=fast.get("api_key_env", "OPENAI_API_KEY"),
             api_key=fast.get("api_key", ""),
             base_url=fast.get("base_url", ""),
+            auth_method=fast.get("auth_method", "direct"),
             thinking=fast.get("thinking", "high"),
         ),
         embedding=EmbeddingConfig(
@@ -228,6 +232,7 @@ def load_config(path: str = "config.yaml") -> Config:
             token_env=gateway.get("token_env", "OPENCLAW_GATEWAY_TOKEN"),
             token=gateway.get("token", ""),
             prefer_for_models=_as_bool(gateway.get("prefer_for_models", False), False),
+            model_runner_agent_id=gateway.get("model_runner_agent_id", "oam-model-runner"),
         ),
         framework=raw.get("framework", "standalone"),
         server_host=server.get("host", "127.0.0.1"),

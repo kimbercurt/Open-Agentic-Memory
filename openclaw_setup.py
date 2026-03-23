@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 OPENCLAW_HOME = Path.home() / ".openclaw"
 OPENCLAW_CONFIG = OPENCLAW_HOME / "openclaw.json"
+MODEL_RUNNER_ID = "oam-model-runner"
 
 # Agent templates per brain
 BRAIN_AGENTS = [
@@ -114,6 +115,60 @@ def _agent_entry(agent_id: str, name: str, theme: str, fast_model: str, tools: L
     return entry
 
 
+def _write_model_runner_workspace(agent_id: str) -> None:
+    workspace_dir = OPENCLAW_HOME / "workspaces" / agent_id
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    (workspace_dir / "AGENTS.md").write_text(
+        "# AGENTS.md\n\n"
+        "1. Read IDENTITY.md\n"
+        "2. Read SOUL.md\n"
+        "3. Treat the incoming request messages as the full source of truth for this turn.\n",
+        encoding="utf-8",
+    )
+    (workspace_dir / "IDENTITY.md").write_text(
+        "# IDENTITY.md\n\n"
+        "- Name: Open Agentic Memory Model Runner\n"
+        "- Role: Neutral OpenClaw gateway runner for Open Agentic Memory\n",
+        encoding="utf-8",
+    )
+    (workspace_dir / "SOUL.md").write_text(
+        "# SOUL.md\n\n"
+        "You are the neutral model runner for Open Agentic Memory.\n\n"
+        "Rules:\n"
+        "- Follow the incoming system message exactly when one is present.\n"
+        "- Do not impose your own standing persona, memory, or agenda.\n"
+        "- Keep replies inside the requested format.\n"
+        "- Do not mention this runner identity unless the user explicitly asks.\n",
+        encoding="utf-8",
+    )
+
+
+def ensure_model_runner(model_name: str, install_path: str) -> Dict[str, Any]:
+    config = _load_openclaw_config()
+    agents_list = config.setdefault("agents", {}).setdefault("list", [])
+    existing_ids = {a["id"] for a in agents_list if isinstance(a, dict) and a.get("id")}
+    auth_source = _find_auth_profile()
+    created = False
+
+    if MODEL_RUNNER_ID not in existing_ids:
+        _create_agent_dir(MODEL_RUNNER_ID, model_name, auth_source)
+        agents_list.append(
+            _agent_entry(
+                agent_id=MODEL_RUNNER_ID,
+                name="Model Runner",
+                theme="Neutral gateway runner that obeys incoming system messages.",
+                fast_model=model_name,
+                tools=[],
+                emoji="\U0001F3C3",
+            )
+        )
+        created = True
+
+    _write_model_runner_workspace(MODEL_RUNNER_ID)
+    _save_openclaw_config(config)
+    return {"agent_id": MODEL_RUNNER_ID, "created": created, "model": model_name, "install_path": install_path}
+
+
 def register_brain(
     brain_key: str,
     brain_name: str,
@@ -124,6 +179,7 @@ def register_brain(
     Register all memory agents for a brain in OpenClaw.
     Returns a summary of what was created.
     """
+    runner_result = ensure_model_runner(fast_model, install_path)
     config = _load_openclaw_config()
     agents_list = config.setdefault("agents", {}).setdefault("list", [])
     existing_ids = {a["id"] for a in agents_list}
@@ -131,6 +187,10 @@ def register_brain(
 
     created = []
     skipped = []
+    if runner_result.get("created"):
+        created.append(MODEL_RUNNER_ID)
+    else:
+        skipped.append(MODEL_RUNNER_ID)
 
     # Per-brain agents
     for tmpl in BRAIN_AGENTS:
@@ -237,14 +297,15 @@ def unregister_brain(brain_key: str) -> Dict[str, Any]:
     to_remove = [a["id"] for a in agents_list if a["id"].startswith(brain_prefix)]
 
     # Check if any other OAM brains exist
+    shared_ids = [s["id"] for s in SHARED_AGENTS] + [MODEL_RUNNER_ID]
     other_oam = [a["id"] for a in agents_list
                  if (a["id"].startswith("oam-") or any(s in a["id"] for s in ["-recall-", "-observer-"]))
                  and not a["id"].startswith(brain_prefix)
-                 and a["id"] not in [s["id"] for s in SHARED_AGENTS]]
+                 and a["id"] not in shared_ids]
 
     # Remove shared agents too if this is the last brain
     if not other_oam:
-        to_remove.extend([s["id"] for s in SHARED_AGENTS])
+        to_remove.extend(shared_ids)
 
     # Remove from agents list
     config["agents"]["list"] = [a for a in agents_list if a["id"] not in to_remove]
@@ -290,12 +351,16 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
         print("Usage: python openclaw_setup.py register <brain_key> <brain_name> <fast_model> <install_path>")
+        print("       python openclaw_setup.py ensure-runner <model_name> <install_path>")
         print("       python openclaw_setup.py unregister <brain_key>")
         sys.exit(1)
 
     cmd = sys.argv[1]
     if cmd == "register" and len(sys.argv) >= 6:
         result = register_brain(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+        print(json.dumps(result, indent=2))
+    elif cmd == "ensure-runner" and len(sys.argv) >= 4:
+        result = ensure_model_runner(sys.argv[2], sys.argv[3])
         print(json.dumps(result, indent=2))
     elif cmd == "unregister" and len(sys.argv) >= 3:
         result = unregister_brain(sys.argv[2])
