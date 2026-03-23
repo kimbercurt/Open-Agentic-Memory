@@ -448,8 +448,6 @@ def _call_openclaw_gateway_runner(
         payload["thinking"] = gateway_thinking
     headers = {
         "x-openclaw-agent-id": str(agent_id or "oam-model-runner"),
-        # Force stateless execution; OAM already sends the full prompt/history.
-        "x-openclaw-session-key": f"oam:{uuid.uuid4().hex}",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
