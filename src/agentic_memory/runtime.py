@@ -194,6 +194,44 @@ def _provider_api_key_env_candidates(provider: str, api_key_env: str = "") -> Li
     return names
 
 
+def _normalize_reasoning_level(level: str) -> str:
+    clean = str(level or "").strip().lower()
+    mapping = {
+        "low": "low",
+        "med": "medium",
+        "mid": "medium",
+        "medium": "medium",
+        "high": "high",
+        "max": "max",
+        "xhigh": "max",
+    }
+    return mapping.get(clean, "")
+
+
+def _openai_reasoning_effort(level: str) -> str:
+    normalized = _normalize_reasoning_level(level)
+    if normalized == "medium":
+        return "medium"
+    if normalized == "high":
+        return "high"
+    if normalized == "max":
+        return "high"
+    if normalized == "low":
+        return "low"
+    return ""
+
+
+def _anthropic_thinking_budget(level: str) -> int:
+    normalized = _normalize_reasoning_level(level)
+    mapping = {
+        "low": 4000,
+        "medium": 8000,
+        "high": 12000,
+        "max": 16000,
+    }
+    return mapping.get(normalized, 0)
+
+
 def _openclaw_provider_aliases(provider: str) -> List[str]:
     normalized = _normalize_provider(provider)
     aliases = {
@@ -358,6 +396,14 @@ def _call_openclaw_gateway_model(messages: List[Dict[str, str]], model: str, gat
     return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
 
 
+def _prefer_gateway_transport(app_config: Optional[Config]) -> bool:
+    if app_config is None or getattr(app_config, "gateway", None) is None:
+        return False
+    if str(getattr(app_config, "framework", "") or "").strip().lower() == "openclaw":
+        return False
+    return bool(getattr(app_config.gateway, "prefer_for_models", False))
+
+
 def call_model_text(
     model_cfg: ModelConfig,
     messages: List[Dict[str, str]],
@@ -368,13 +414,8 @@ def call_model_text(
     model = str(model_cfg.model or "gpt-5.4").strip()
     base_url = str(model_cfg.base_url or "").strip()
     gateway = _resolve_gateway_config(app_config)
-    gateway_preferred = bool(
-        gateway
-        and (
-            (app_config is not None and app_config.framework == "openclaw")
-            or (app_config is not None and getattr(app_config, "gateway", None) is not None and app_config.gateway.prefer_for_models)
-        )
-    )
+    gateway_preferred = bool(gateway and _prefer_gateway_transport(app_config))
+    reasoning_level = _normalize_reasoning_level(thinking)
 
     if gateway_preferred:
         try:
@@ -394,15 +435,12 @@ def call_model_text(
                 else "https://api.mistral.ai/v1" if provider == "mistral"
                 else "https://api.openai.com/v1"
             )
-            if not api_key and gateway and not gateway_preferred:
-                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-                if gateway_reply:
-                    return gateway_reply
             if not api_key:
                 return f"Error calling model: missing API key for provider {provider}."
             payload: Dict[str, Any] = {"model": model, "messages": messages, "max_tokens": 2000}
-            if thinking:
-                payload["reasoning_effort"] = thinking
+            reasoning_effort = _openai_reasoning_effort(reasoning_level)
+            if reasoning_effort:
+                payload["reasoning_effort"] = reasoning_effort
             data = _urlopen_json(
                 f"{endpoint.rstrip('/')}/chat/completions",
                 body=payload,
@@ -412,10 +450,6 @@ def call_model_text(
             return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
 
         if provider == "anthropic":
-            if not api_key and gateway and not gateway_preferred:
-                gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-                if gateway_reply:
-                    return gateway_reply
             if not api_key:
                 return "Error calling model: missing API key for provider anthropic."
             endpoint = (base_url or "https://api.anthropic.com").rstrip("/")
@@ -429,12 +463,19 @@ def call_model_text(
                         "role": str(message.get("role", "user")),
                         "content": str(message.get("content", "")),
                     })
-            payload = {
+            payload: Dict[str, Any] = {
                 "model": model,
                 "max_tokens": 2000,
                 "system": system_text,
                 "messages": chat_messages,
             }
+            thinking_budget = _anthropic_thinking_budget(reasoning_level)
+            if thinking_budget > 0:
+                payload["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": thinking_budget,
+                }
+                payload["max_tokens"] = max(4096, thinking_budget + 2000)
             data = _urlopen_json(
                 f"{endpoint}/v1/messages",
                 body=payload,
@@ -458,14 +499,9 @@ def call_model_text(
             )
             return str(data.get("message", {}).get("content", "") or "")
 
-        if gateway and not gateway_preferred:
-            gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
-            if gateway_reply:
-                return gateway_reply
-
         return f"Error calling model: unsupported provider '{provider}'."
     except Exception as exc:  # pragma: no cover - network dependent
-        if gateway and not gateway_preferred:
+        if gateway_preferred:
             try:
                 gateway_reply = _call_openclaw_gateway_model(messages, model, gateway, thinking=thinking)
                 if gateway_reply:

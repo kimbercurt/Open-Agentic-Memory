@@ -42,10 +42,10 @@ The setup wizard walks you through:
 3. **Primary Model** — your main chatbot LLM (shows provider-specific recommendations)
 4. **Fast Model** — for the 13 specialized agents (speed over depth)
 5. **Embedding Provider** — auto-detects what is available on your machine; OpenClaw defaults to built-in memory search
-6. **API Keys** — auto-detects env vars and OpenClaw auth, can save missing keys into `.env`, and OpenClaw prefers its local gateway for sub-agents
+6. **API Keys** — auto-detects env vars and OpenClaw auth, and can save missing keys into `.env`
 7. **Chatbots** — choose how many isolated chatbots you want; final names are set in the browser setup chat
 
-It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`, records the local gateway settings, and prefers that gateway for both the main chat and the specialized agents; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
+It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`, records the local gateway settings for memory/tool integration, and resolves provider auth from OpenClaw when available; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
 
 ### Manual Setup
 

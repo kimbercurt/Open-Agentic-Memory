@@ -329,7 +329,7 @@ configure_openclaw_gateway() {
   fi
 
   GATEWAY_ENABLED="true"
-  GATEWAY_PREFER_FOR_MODELS="true"
+  GATEWAY_PREFER_FOR_MODELS="false"
   GATEWAY_PORT="$(detect_openclaw_gateway_port || true)"
   GATEWAY_PORT="${GATEWAY_PORT:-0}"
   if [ "$GATEWAY_PORT" != "0" ]; then
@@ -344,7 +344,6 @@ resolve_provider_auth_setup() {
   local provider="$1"
   local env_name="$2"
   local prompt_name="$3"
-  local allow_gateway="${4:-false}"
   local openclaw_source=""
 
   RESOLVED_AUTH_SOURCE=""
@@ -368,11 +367,7 @@ resolve_provider_auth_setup() {
     fi
   fi
 
-  if [ "$allow_gateway" = "true" ]; then
-    read -r -s -p "  Enter your ${prompt_name} API key (or press Enter to use OpenClaw's gateway for all model calls): " RESOLVED_AUTH_VALUE
-  else
-    read -r -s -p "  Enter your ${prompt_name} API key (optional - save it to .env for direct calls): " RESOLVED_AUTH_VALUE
-  fi
+  read -r -s -p "  Enter your ${prompt_name} API key (optional - press Enter to skip if OpenClaw already has provider auth configured): " RESOLVED_AUTH_VALUE
   echo
   RESOLVED_AUTH_VALUE="$(trim "$RESOLVED_AUTH_VALUE")"
 
@@ -383,11 +378,7 @@ resolve_provider_auth_setup() {
     return 0
   fi
 
-  if [ "$allow_gateway" = "true" ]; then
-    RESOLVED_AUTH_SOURCE="gateway"
-  else
-    RESOLVED_AUTH_SOURCE="missing"
-  fi
+  RESOLVED_AUTH_SOURCE="missing"
 }
 
 brain_key_exists() {
@@ -1227,15 +1218,15 @@ echo
 configure_openclaw_gateway
 
 if [ "$FRAMEWORK" = "openclaw" ]; then
-  info "OpenClaw will be the preferred path for all model calls when its local gateway is available."
+  info "OpenClaw auth and memory tools will be auto-detected when available."
   if [ "$GATEWAY_PORT" != "0" ]; then
     success "OpenClaw gateway detected at $GATEWAY_BASE_URL."
   else
-    warn "OpenClaw gateway metadata was not detected. The runtime will still fall back to provider auth or auto-discovery."
+    warn "OpenClaw gateway metadata was not detected. Memory tool integration will rely on local OpenClaw defaults if they exist."
   fi
 fi
 
-resolve_provider_auth_setup "$PROVIDER" "$API_KEY_ENV" "$(provider_display_name "$PROVIDER")" "$([ "$FRAMEWORK" = "openclaw" ] && printf '%s' "true" || printf '%s' "false")"
+resolve_provider_auth_setup "$PROVIDER" "$API_KEY_ENV" "$(provider_display_name "$PROVIDER")"
 PRIMARY_API_KEY_VALUE="$RESOLVED_AUTH_VALUE"
 PRIMARY_API_KEY_SOURCE="$RESOLVED_AUTH_SOURCE"
 
@@ -1249,9 +1240,6 @@ case "$PRIMARY_API_KEY_SOURCE" in
   dotenv:*)
     success "$(provider_display_name "$PROVIDER") API key saved to .env."
     ;;
-  gateway)
-    info "No separate $(provider_display_name "$PROVIDER") key was provided. Sub-agents will use the OpenClaw gateway."
-    ;;
   not-needed)
     info "No primary provider API key is needed for this selection."
     ;;
@@ -1264,11 +1252,11 @@ case "$PRIMARY_API_KEY_SOURCE" in
 esac
 
 if [ -n "$EMBED_KEY_ENV" ]; then
-  if [ "$EMBED_KEY_ENV" = "$API_KEY_ENV" ] && [ "$PRIMARY_API_KEY_SOURCE" != "gateway" ] && [ "$PRIMARY_API_KEY_SOURCE" != "missing" ] && [ "$PRIMARY_API_KEY_SOURCE" != "not-needed" ]; then
+  if [ "$EMBED_KEY_ENV" = "$API_KEY_ENV" ] && [ "$PRIMARY_API_KEY_SOURCE" != "missing" ] && [ "$PRIMARY_API_KEY_SOURCE" != "not-needed" ]; then
     EMBED_API_KEY_VALUE="$PRIMARY_API_KEY_VALUE"
     EMBED_API_KEY_SOURCE="$PRIMARY_API_KEY_SOURCE"
   else
-    resolve_provider_auth_setup "$EMBED_PROVIDER" "$EMBED_KEY_ENV" "$(provider_display_name "$EMBED_PROVIDER")" "false"
+    resolve_provider_auth_setup "$EMBED_PROVIDER" "$EMBED_KEY_ENV" "$(provider_display_name "$EMBED_PROVIDER")"
     EMBED_API_KEY_VALUE="$RESOLVED_AUTH_VALUE"
     EMBED_API_KEY_SOURCE="$RESOLVED_AUTH_SOURCE"
   fi
@@ -1296,9 +1284,9 @@ else
   info "No embedding API key is needed for this selection."
 fi
 
-if [ "$FRAMEWORK" = "openclaw" ] && [ "$PRIMARY_API_KEY_SOURCE" = "gateway" ] && [ "$GATEWAY_PORT" = "0" ]; then
-  warn "You chose gateway-only model auth, but no local OpenClaw gateway port was detected yet."
-  info "If sub-agents fail later, start OpenClaw's gateway or add ${API_KEY_ENV} to .env."
+if [ "$FRAMEWORK" = "openclaw" ] && [ "$PRIMARY_API_KEY_SOURCE" = "missing" ] && [ -n "$API_KEY_ENV" ]; then
+  warn "No direct ${PROVIDER} credentials were detected for model calls."
+  info "Add ${API_KEY_ENV} to .env, export it in your shell, or configure that provider in OpenClaw auth before launching chat."
 fi
 
 divider
@@ -1466,7 +1454,7 @@ if [ -f ".env" ]; then
   info "Any keys entered during setup were saved to .env for future launches."
 fi
 if [ "$FRAMEWORK" = "openclaw" ]; then
-  info "OpenClaw memorySearch is configured, and gateway routing will be preferred when the local gateway is running."
+  info "OpenClaw memorySearch is configured, and OpenClaw auth/tooling metadata was detected for this install."
   info "Per-brain agents will be registered automatically as each chatbot identity is saved in the browser."
 fi
 

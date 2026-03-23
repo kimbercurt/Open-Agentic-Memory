@@ -43,7 +43,7 @@ except ImportError:
     import uvicorn
 
 from agentic_memory.config import load_config as load_runtime_config, load_env_file
-from agentic_memory.runtime import MemoryRuntime
+from agentic_memory.runtime import MemoryRuntime, call_model_text
 
 load_env_file(ROOT_DIR / ".env")
 
@@ -211,54 +211,13 @@ _openclaw_gateway_checked = False
 
 def call_model(messages: List[Dict[str, str]], config: Dict[str, Any], thinking: str = "") -> str:
     """Call the configured primary model and return the response text."""
-    global _openclaw_gateway, _openclaw_gateway_checked
-
-    framework = config.get("framework", "standalone")
-    models = config.get("models", {})
-    primary = models.get("primary", {})
-    provider = primary.get("provider", "openai")
-    model = primary.get("model", "gpt-5.4")
-    api_key_env = primary.get("api_key_env", "OPENAI_API_KEY")
-    api_key = str(primary.get("api_key") or os.environ.get(api_key_env, "") or "").strip()
-    base_url = primary.get("base_url", "")
-
-    # If using OpenClaw, prefer the local gateway so the selected model is honored.
-    if framework == "openclaw":
-        if not _openclaw_gateway_checked:
-            _openclaw_gateway = _load_openclaw_gateway_config()
-            _openclaw_gateway_checked = True
-        if _openclaw_gateway:
-            gateway_reply = _call_openclaw_gateway(messages, model, _openclaw_gateway, thinking=thinking or "low")
-            if gateway_reply and not gateway_reply.startswith("Error calling OpenClaw gateway:"):
-                return gateway_reply
-        # Compose messages into a single prompt for the CLI
-        system_text = ""
-        user_text = ""
-        for m in messages:
-            if m["role"] == "system":
-                system_text = m["content"]
-            elif m["role"] == "user":
-                user_text = m["content"]
-            elif m["role"] == "assistant":
-                pass  # CLI doesn't support multi-turn, last user msg is what matters
-        # Use the last user message with system context prepended
-        if system_text:
-            full_msg = f"System context:\n{system_text}\n\nUser:\n{user_text}"
-        else:
-            full_msg = user_text
-        return _call_openclaw_cli_with_thinking(full_msg, thinking=thinking or "low")
-
-    # Direct API calls for non-OpenClaw frameworks
-    if provider in ("openai", "openrouter"):
-        return _call_openai_compatible(messages, model, api_key, base_url or (
-            "https://api.openai.com/v1" if provider == "openai" else "https://openrouter.ai/api/v1"
-        ))
-    elif provider == "anthropic":
-        return _call_anthropic(messages, model, api_key, base_url)
-    elif provider == "ollama":
-        return _call_ollama(messages, model, base_url or "http://localhost:11434")
-    else:
-        return _call_openai_compatible(messages, model, api_key, base_url or "https://api.openai.com/v1")
+    del config
+    return call_model_text(
+        runtime_config.primary_model,
+        messages,
+        thinking=thinking,
+        app_config=runtime_config,
+    )
 
 
 def _call_openai_compatible(messages: List[Dict], model: str, api_key: str, base_url: str) -> str:
@@ -768,9 +727,9 @@ async def chat(request: Request):
     gate_result: Optional[Dict[str, Any]] = None
     staged_context: Optional[Dict[str, Any]] = None
     deep_recall: Optional[Dict[str, Any]] = None
-    # Map reasoning level from client to OpenClaw thinking levels
+    # Preserve UI reasoning levels and let the model adapter translate them per provider.
     raw_reasoning = str(body.get("reasoning", "")).strip().lower()
-    thinking_map = {"low": "low", "med": "mid", "high": "high", "max": "xhigh"}
+    thinking_map = {"low": "low", "med": "med", "medium": "med", "high": "high", "max": "max"}
     thinking_level = thinking_map.get(raw_reasoning, "")
 
     # Handle clear command
@@ -922,6 +881,23 @@ def _brain_key_from_name(name: str) -> str:
     return key or "assistant"
 
 
+def _allocate_brain_key(name: str, placeholder_key: str = "") -> str:
+    preferred = _brain_key_from_name(name)
+    if placeholder_key and preferred == placeholder_key:
+        return preferred
+
+    candidate = preferred
+    suffix = 2
+    while True:
+        existing_identity = ROOT_DIR / "brains" / candidate / "identity.json"
+        if not existing_identity.exists():
+            return candidate
+        if placeholder_key and candidate == placeholder_key:
+            return candidate
+        candidate = f"{preferred}-{suffix}"
+        suffix += 1
+
+
 def _is_placeholder_brain(brain_key: str, brain_name: str) -> bool:
     key = str(brain_key or "").strip().lower()
     name = str(brain_name or "").strip().lower()
@@ -932,12 +908,12 @@ def _save_identity(identity: Dict[str, Any]):
     """Save per-brain identity files."""
     install_path = ROOT_DIR
     brain_name = identity.get("name", "Assistant")
-    brain_key = _brain_key_from_name(brain_name)
     brain_slot = max(0, current_brain_index)
     placeholder_key = ""
     brains_cfg = config.get("brains", [])
     if brain_slot < len(brains_cfg) and isinstance(brains_cfg[brain_slot], dict):
         placeholder_key = str(brains_cfg[brain_slot].get("key", "") or "").strip()
+    brain_key = _allocate_brain_key(brain_name, placeholder_key=placeholder_key)
 
     # Create per-brain directory
     brain_dir = install_path / "brains" / brain_key
@@ -1008,13 +984,7 @@ def _save_identity(identity: Dict[str, Any]):
         try:
             from openclaw_setup import register_brain
             fast_model = config.get("models", {}).get("fast", {}).get("model", "gpt-5.3-codex-spark")
-            # Use a clean brain key from the agent name
             brain_name = identity.get("name", "Assistant")
-            brain_key = brain_name.lower().replace(" ", "-").replace("_", "-")
-            # Remove special characters
-            brain_key = "".join(c for c in brain_key if c.isalnum() or c == "-").strip("-")
-            if not brain_key:
-                brain_key = "assistant"
 
             result = register_brain(
                 brain_key=brain_key,

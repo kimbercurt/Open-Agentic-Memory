@@ -227,7 +227,7 @@ def load_config(path: str = "config.yaml") -> Config:
             port=int(gateway.get("port", 0) or 0),
             token_env=gateway.get("token_env", "OPENCLAW_GATEWAY_TOKEN"),
             token=gateway.get("token", ""),
-            prefer_for_models=_as_bool(gateway.get("prefer_for_models", raw.get("framework", "standalone") == "openclaw"), raw.get("framework", "standalone") == "openclaw"),
+            prefer_for_models=_as_bool(gateway.get("prefer_for_models", False), False),
         ),
         framework=raw.get("framework", "standalone"),
         server_host=server.get("host", "127.0.0.1"),

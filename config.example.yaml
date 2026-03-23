@@ -38,7 +38,7 @@ embedding:
   note: ""                       # optional: setup writes extra context here for OpenClaw built-in mode
 
 # ============================================================
-# Gateway — preferred for OpenClaw installs
+# Gateway — used for OpenClaw memory/tool integration
 # ============================================================
 gateway:
   enabled: false
@@ -46,7 +46,7 @@ gateway:
   port: 0
   token_env: "OPENCLAW_GATEWAY_TOKEN"
   token: ""                      # optional: setup can write the detected gateway token here
-  prefer_for_models: false       # OpenClaw installs should usually set this to true
+  prefer_for_models: false       # leave false unless you explicitly want model traffic to use the OpenClaw gateway
 
 # ============================================================
 # Storage — where memories live
