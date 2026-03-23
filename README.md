@@ -73,17 +73,6 @@ python3 -m venv .venv
 .venv/bin/python serve_chat.py
 ```
 
-### Local Testing
-
-To test on your own machine before publishing:
-
-```bash
-cd /path/to/Open-Agentic-Memory
-bash setup.sh
-```
-
-The setup runs locally. If you choose remote providers like Anthropic, OpenAI, Gemini, or OpenRouter, those model calls still need network access at runtime.
-
 ### Tests
 
 Run the basic local regression suite with:
