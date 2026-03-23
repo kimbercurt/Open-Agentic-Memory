@@ -50,6 +50,15 @@ OPENCLAW_CONFIG_PATH = OPENCLAW_STATE_DIR / "openclaw.json"
 OPENCLAW_MAIN_AUTH_PROFILES_PATH = OPENCLAW_STATE_DIR / "agents" / "main" / "agent" / "auth-profiles.json"
 OPENCLAW_WORKSPACES_DIR = OPENCLAW_STATE_DIR / "workspaces"
 
+REMEMBER_ANYWHERE_PATTERNS = [
+    re.compile(r"save\s+(?:everything|all|the\s+stuff|anything\s+important).*(?:memory|remember)", re.IGNORECASE),
+    re.compile(r"(?:make\s+sure|be\s+sure).*(?:saved?|remember)", re.IGNORECASE),
+    re.compile(r"save\s+(?:any|all)\s+of\s+(?:the|that|this)", re.IGNORECASE),
+    re.compile(r"remember\s+(?:everything|all\s+of\s+(?:this|that))", re.IGNORECASE),
+    re.compile(r"save\s+(?:this|that|it)\s+to\s+memory", re.IGNORECASE),
+    re.compile(r"(?:store|pin|write)\s+(?:this|that|it)\s+(?:to|in)\s+memory", re.IGNORECASE),
+]
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -1710,9 +1719,14 @@ class MemoryRuntime:
         self._session_lock = threading.RLock()
         self._observer_offsets: Dict[str, int] = defaultdict(int)
         self._prompt_cache: Dict[str, str] = {}
+        self._velocity_timestamps: Dict[str, Deque[float]] = defaultdict(lambda: deque(maxlen=100))
+        self._last_observation_time: Dict[str, float] = defaultdict(float)
+        self._had_activity: Dict[str, bool] = defaultdict(bool)
+        self._notify_event = threading.Event()
 
     def close(self) -> None:
         self._observer_event.set()
+        self._notify_event.set()
         if self._observer_thread and self._observer_thread.is_alive():
             self._observer_thread.join(timeout=2)
         self.executor.shutdown(wait=False, cancel_futures=True)
@@ -1725,15 +1739,63 @@ class MemoryRuntime:
         self._observer_thread.start()
 
     def _observer_loop(self) -> None:
-        interval = max(30, int(self.config.agents.observer_interval))
-        while not self._observer_event.wait(interval):
+        """Velocity-triggered observer loop.
+
+        Instead of polling on a fixed timer, the loop wakes on notify()
+        calls (sent after each chat turn) and checks whether the message
+        velocity for any brain has crossed the threshold.  A final idle
+        sweep fires when the conversation goes quiet.
+        """
+        while not self._observer_event.is_set():
+            self._notify_event.wait(timeout=30)
+            self._notify_event.clear()
+
+            if self._observer_event.is_set():
+                break
+
+            now = time.monotonic()
             for brain_key in self.known_brains():
-                try:
-                    self.run_observer_cycle(brain_key, force=False)
-                except Exception as exc:  # pragma: no cover - background safety
-                    status = self.observer_status[brain_key]
-                    status.last_error = str(exc)
-                    status.running = False
+                timestamps = self._velocity_timestamps[brain_key]
+
+                # Prune timestamps outside the velocity window
+                window = max(60, self.config.agents.observer_velocity_window)
+                cutoff = now - window
+                while timestamps and timestamps[0] < cutoff:
+                    timestamps.popleft()
+
+                # Respect cooldown between observation cycles
+                last_obs = self._last_observation_time.get(brain_key, 0.0)
+                if last_obs and (now - last_obs) < max(30, self.config.agents.observer_cooldown):
+                    continue
+
+                should_observe = False
+
+                # Velocity trigger: enough messages in the sliding window
+                if len(timestamps) >= max(1, self.config.agents.observer_velocity_threshold):
+                    should_observe = True
+
+                # Idle sweep: had activity but now quiet
+                elif self._had_activity.get(brain_key) and timestamps:
+                    last_msg_time = timestamps[-1]
+                    if (now - last_msg_time) >= max(30, self.config.agents.observer_idle_sweep):
+                        should_observe = True
+
+                if should_observe:
+                    try:
+                        result = self.run_observer_cycle(brain_key, force=False)
+                        if result.get("status") == "completed":
+                            self._last_observation_time[brain_key] = now
+                            self._had_activity[brain_key] = False
+                    except Exception as exc:  # pragma: no cover - background safety
+                        status = self.observer_status[brain_key]
+                        status.last_error = str(exc)
+                        status.running = False
+
+    def notify_observer(self, brain_key: str) -> None:
+        """Record a message timestamp and wake the observer thread."""
+        self._velocity_timestamps[brain_key].append(time.monotonic())
+        self._had_activity[brain_key] = True
+        self._notify_event.set()
 
     def known_brains(self) -> List[str]:
         keys = {brain.key for brain in self.config.brains}
@@ -1791,6 +1853,44 @@ class MemoryRuntime:
             allow_duplicate=(kind == "chat_turn"),
         )
 
+    def save_from_gate(self, brain_key: str, content: str) -> Optional[Dict[str, Any]]:
+        """Store a memory triggered by the gate's save classification."""
+        if not content.strip():
+            return None
+        return self.store.store_memory(
+            brain_key=brain_key,
+            kind="note",
+            source="gate-save",
+            title=truncate(content, 72),
+            content=content.strip(),
+            importance=85,
+            metadata={"captured_at": utc_now(), "save_intent": True},
+        )
+
+    def bulk_save_recent_conversation(self, brain_key: str) -> List[Dict[str, Any]]:
+        """Save the last 8 substantive user messages to durable memory."""
+        messages = self.get_session_messages(brain_key, window=40)
+        user_messages = [
+            msg for msg in messages
+            if msg.get("role") == "user" and len(str(msg.get("text", "")).strip()) >= 40
+        ]
+        saved: List[Dict[str, Any]] = []
+        for msg in user_messages[-8:]:
+            content = str(msg.get("text", "")).strip()
+            result = self.store.store_memory(
+                brain_key=brain_key,
+                kind="note",
+                source="chat-bulk-save",
+                title=truncate(content, 72),
+                content=content,
+                importance=75,
+                metadata={"captured_at": msg.get("created_at", utc_now()), "bulk_save": True},
+                allow_duplicate=False,
+            )
+            if result:
+                saved.append(result)
+        return saved
+
     def search_memories(self, brain_key: str, query: str, limit: int = 10, kind: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> List[Dict[str, Any]]:
         return self.store.search_memories(brain_key, query, limit=limit, kind=kind, date_from=date_from, date_to=date_to)
 
@@ -1801,10 +1901,15 @@ class MemoryRuntime:
         return self.store.search_graph_notes(brain_key, query, limit=limit)
 
     def classify_memory_need(self, brain_key: str, message: str) -> Dict[str, Any]:
+        """Classify inbound message: none / light / deep / save / save_bulk."""
+        # Fast regex check for obvious bulk-save requests (skips model call)
+        if any(pat.search(message) for pat in REMEMBER_ANYWHERE_PATTERNS):
+            return {"classification": "save_bulk", "reason": "regex pattern match", "raw": ""}
+
         prompt = self._load_prompt("scout/gate.md")
         recent = self.get_session_messages(brain_key, window=6)
         user_prompt = (
-            "Classify whether memory is needed for this inbound user message.\n\n"
+            "Classify what memory action is needed for this inbound user message.\n\n"
             f"Recent session messages:\n{json.dumps(recent, indent=2)}\n\n"
             f"Inbound message:\n{message}\n"
         )
@@ -1817,22 +1922,37 @@ class MemoryRuntime:
             thinking=self.config.fast_model.thinking,
             app_config=self.config,
         )
-        parsed = extract_json_object(response)
-        if parsed and parsed.get("classification") in {"none", "light", "deep"}:
-            return {
-                "classification": parsed["classification"],
-                "reason": str(parsed.get("reason", "")),
-                "raw": response,
-            }
+        return self._parse_gate_response(response, message)
 
-        lowered = message.lower()
-        if any(term in lowered for term in ["what do you remember", "last time", "previously", "history", "before", "remember about"]):
-            classification = "deep"
-        elif any(term in lowered for term in ["thanks", "hello", "hi", "ok", "okay"]):
-            classification = "none"
-        else:
-            classification = "light"
-        return {"classification": classification, "reason": "fallback heuristic", "raw": response}
+    def _parse_gate_response(self, response: str, message: str) -> Dict[str, Any]:
+        """Parse the gate agent's response, handling JSON, action verbs, and text fallback."""
+        valid_classes = {"none", "light", "deep", "save", "save_bulk"}
+
+        # Try structured JSON parsing
+        parsed = extract_json_object(response)
+        if parsed:
+            cls = str(parsed.get("classification", "")).strip().lower()
+            if cls in valid_classes:
+                return {"classification": cls, "reason": str(parsed.get("reason", "")), "raw": response}
+            # Handle action-verb responses from the LLM
+            action = str(parsed.get("action", "")).strip().lower()
+            if action in {"save", "store", "remember", "pin", "write"}:
+                return {"classification": "save", "reason": f"action verb: {action}", "raw": response}
+
+        # Text-based fallback on the raw response
+        lowered_resp = response.lower()
+        if "save_bulk" in lowered_resp:
+            return {"classification": "save_bulk", "reason": "text fallback", "raw": response}
+        if "\"save\"" in lowered_resp or "save to memory" in lowered_resp:
+            return {"classification": "save", "reason": "text fallback", "raw": response}
+
+        # Heuristic fallback based on the original user message
+        msg_lower = message.lower()
+        if any(term in msg_lower for term in ["what do you remember", "last time", "previously", "history", "before", "remember about"]):
+            return {"classification": "deep", "reason": "fallback heuristic", "raw": response}
+        if any(term in msg_lower for term in ["thanks", "hello", "hi", "ok", "okay"]):
+            return {"classification": "none", "reason": "fallback heuristic", "raw": response}
+        return {"classification": "light", "reason": "fallback heuristic", "raw": response}
 
     def invoke_deep_recall(self, brain_key: str, query: str) -> Dict[str, Any]:
         jobs = {

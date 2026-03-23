@@ -651,8 +651,24 @@ async def chat(request: Request):
         except Exception:
             light_results = []
 
+        # Handle save intent from the gate
+        action_notes = []
+        gate_class = gate_result.get("classification", "")
+        if gate_class == "save":
+            try:
+                runtime.save_from_gate(resolved_brain, user_msg)
+                action_notes.append("I saved that to durable memory.")
+            except Exception:
+                pass
+        elif gate_class == "save_bulk":
+            try:
+                saved = runtime.bulk_save_recent_conversation(resolved_brain)
+                action_notes.append(f"I saved {len(saved)} item(s) from our recent conversation to durable memory.")
+            except Exception:
+                action_notes.append("I attempted to save recent conversation but encountered an issue.")
+
         deep_recall = None
-        if gate_result.get("classification") == "deep":
+        if gate_class == "deep":
             try:
                 deep_recall = runtime.invoke_deep_recall(resolved_brain, user_msg)
             except Exception:
@@ -666,6 +682,12 @@ async def chat(request: Request):
                 + "Use the following memory context only when it is relevant and helpful. "
                 + "Do not mention that you were given hidden memory context unless the user asks.\n\n"
                 + memory_context
+            )
+        if action_notes:
+            system_prompt += (
+                "\n\n## Memory Actions Taken\n"
+                + "The following memory operations were completed before this response:\n"
+                + "\n".join(f"- {note}" for note in action_notes)
             )
         messages = [{"role": "system", "content": system_prompt}]
     else:
@@ -708,6 +730,7 @@ async def chat(request: Request):
         brain_conv.append({"role": "assistant", "content": reply})
         runtime.record_session_message(resolved_brain, "assistant", reply)
         runtime.trigger_scouts(resolved_brain)
+        runtime.notify_observer(resolved_brain)
     else:
         conversation.append({"role": "assistant", "content": reply})
 
