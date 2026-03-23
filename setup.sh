@@ -95,6 +95,29 @@ divider() {
   echo -e "${DIM}  ------------------------------------------${NC}"
 }
 
+require_python3() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 was not found in PATH."
+    info "Install Python 3.9 or newer, then re-run setup."
+    exit 1
+  fi
+
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
+PY
+  then
+    warn "Python 3.9 or newer is required."
+    info "Current version:"
+    python3 --version || true
+    exit 1
+  fi
+
+  local version
+  version="$(python3 --version 2>/dev/null | tr -d '\r')"
+  success "Using ${version}."
+}
+
 trim() {
   printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
@@ -1154,6 +1177,7 @@ apply_openclaw_memorysearch_config() {
 }
 
 header
+require_python3
 
 if [ ! -f "config.example.yaml" ]; then
   step "Cloning repository..."
@@ -1175,8 +1199,8 @@ echo -e "  How do you want to run the agents?"
 echo
 echo -e "  ${GREEN}${BOLD}1)${NC} ${GREEN}OpenClaw${NC} ${DIM}(recommended - easiest setup if you already use OpenClaw)${NC}"
 echo -e "  ${BLUE}${BOLD}2)${NC} ${BLUE}Standalone Python${NC} ${DIM}(memory service runs directly from this repo)${NC}"
-echo -e "  ${PURPLE}${BOLD}3)${NC} ${PURPLE}LangChain / LangGraph${NC} ${DIM}(use this repo's memory API with your existing app)${NC}"
-echo -e "  ${CYAN}${BOLD}4)${NC} ${CYAN}Manual${NC} ${DIM}(generate config and service, wire it in yourself)${NC}"
+echo -e "  ${PURPLE}${BOLD}3)${NC} ${PURPLE}LangChain / LangGraph${NC} ${DIM}(generate this repo's memory service/config, then wire it into your app)${NC}"
+echo -e "  ${CYAN}${BOLD}4)${NC} ${CYAN}Manual${NC} ${DIM}(same service/config generation, with fully manual integration)${NC}"
 echo
 read -r -p "  Select [1-4]: " FRAMEWORK_CHOICE
 FRAMEWORK_CHOICE="${FRAMEWORK_CHOICE:-1}"
@@ -1555,14 +1579,14 @@ models:
     provider: "$(yaml_quote "$PROVIDER")"
     model: "$(yaml_quote "$PRIMARY_MODEL")"
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
-    api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
+    api_key: ""
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
     auth_method: "$(yaml_quote "$PRIMARY_AUTH_METHOD")"
   fast:
     provider: "$(yaml_quote "$PROVIDER")"
     model: "$(yaml_quote "$FAST_MODEL")"
     api_key_env: "$(yaml_quote "$API_KEY_ENV")"
-    api_key: "$(yaml_quote "$PRIMARY_API_KEY_VALUE")"
+    api_key: ""
     base_url: "$(yaml_quote "$PRIMARY_BASE_URL")"
     auth_method: "$(yaml_quote "$FAST_AUTH_METHOD")"
     thinking: "high"
@@ -1571,7 +1595,7 @@ embedding:
   provider: "$(yaml_quote "$EMBED_PROVIDER")"
   model: "$(yaml_quote "$EMBED_MODEL")"
   api_key_env: "$(yaml_quote "$EMBED_KEY_ENV")"
-  api_key: "$(yaml_quote "$EMBED_API_KEY_VALUE")"
+  api_key: ""
   endpoint: "$(yaml_quote "$EMBED_ENDPOINT")"
   dimensions: $EMBED_DIMS
   note: "$(yaml_quote "$EMBED_NOTE")"
@@ -1581,7 +1605,7 @@ gateway:
   base_url: "$(yaml_quote "$GATEWAY_BASE_URL")"
   port: $GATEWAY_PORT
   token_env: "$(yaml_quote "$GATEWAY_TOKEN_ENV")"
-  token: "$(yaml_quote "$GATEWAY_TOKEN")"
+  token: ""
   prefer_for_models: $GATEWAY_PREFER_FOR_MODELS
   model_runner_agent_id: "$(yaml_quote "$GATEWAY_MODEL_RUNNER_AGENT_ID")"
 

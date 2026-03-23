@@ -1,12 +1,8 @@
-const DEFAULT_BASE_URL = "http://127.0.0.1:4195";
+const DEFAULT_BASE_URL = "http://127.0.0.1:8400";
 const DEFAULT_TIMEOUT_MS = 12000;
 const DEFAULT_ALLOWED_AGENTS = [
-  
-  
-  
-  
-  
-  
+  "oam-scout-trajectory",
+  "oam-scout-relevance",
   "scout-trajectory",
   "scout-relevance",
 ];
@@ -32,21 +28,54 @@ function isAllowedAgent(ctx, config) {
   return agentId ? config.allowedAgents.includes(agentId) : false;
 }
 
+function isSharedScoutAgent(agentId) {
+  return [
+    "oam-scout-trajectory",
+    "oam-scout-relevance",
+    "scout-trajectory",
+    "scout-relevance",
+  ].includes(agentId);
+}
+
 function parentAgentKey(ctx) {
   const agentId = String((ctx && ctx.agentId) || "").trim();
-  // Extract brain key from agent ID prefix
-  const parts = agentId.split(/-(recall|observer|scout)-/); return parts.length > 1 ? parts[0] : "assistant";
-  // Scouts are shared — the agent_key is passed in the message, default to assistant
-  return "assistant";
+  if (isSharedScoutAgent(agentId)) {
+    return "assistant";
+  }
+  const parts = agentId.split(/-(recall|observer)-/);
+  return parts.length > 1 ? parts[0] : "assistant";
+}
+
+function resolveAgentKey(ctx, params) {
+  const explicitAgentKey =
+    params && typeof params.agent_key === "string" ? params.agent_key.trim() : "";
+  return explicitAgentKey || parentAgentKey(ctx);
+}
+
+function agentKeyProperty() {
+  return {
+    type: "string",
+    description:
+      "Target brain key. Required for shared scout agents; optional for per-brain recall agents.",
+  };
+}
+
+function scopedAgentKey(ctx, params) {
+  const agentKey = resolveAgentKey(ctx, params);
+  return agentKey || "assistant";
+}
+
+function agentIdFromContext(ctx) {
+  return String((ctx && ctx.agentId) || "").trim();
 }
 
 function agentRole(ctx) {
-  const agentId = String((ctx && ctx.agentId) || "").trim();
+  const agentId = agentIdFromContext(ctx);
   if (agentId.includes("-recall-facts")) return "facts";
   if (agentId.includes("-recall-context")) return "context";
   if (agentId.includes("-recall-temporal")) return "temporal";
-  if (agentId === "scout-trajectory") return "scout_trajectory";
-  if (agentId === "scout-relevance") return "scout_relevance";
+  if (agentId === "oam-scout-trajectory" || agentId === "scout-trajectory") return "scout_trajectory";
+  if (agentId === "oam-scout-relevance" || agentId === "scout-relevance") return "scout_relevance";
   return "facts";
 }
 
@@ -94,7 +123,6 @@ function summarizeMemories(memories) {
 
 // --- Tool: recall_search_memories ---
 function createRecallSearchMemoriesTool(config, ctx) {
-  const agent = parentAgentKey(ctx);
   return {
     name: "recall_search_memories",
     label: "Search Memory Store",
@@ -108,6 +136,7 @@ function createRecallSearchMemoriesTool(config, ctx) {
           type: "string",
           description: "Natural language search query. Describe the topic, fact, or context.",
         },
+        agent_key: agentKeyProperty(),
         limit: {
           type: "number",
           description: "Maximum results to return (default 10).",
@@ -128,6 +157,7 @@ function createRecallSearchMemoriesTool(config, ctx) {
       },
     },
     async execute(_id, params) {
+      const agent = scopedAgentKey(ctx, params);
       const query = typeof params.query === "string" ? params.query.trim() : "";
       const limit =
         typeof params.limit === "number" && params.limit > 0 ? Math.floor(params.limit) : 10;
@@ -149,7 +179,6 @@ function createRecallSearchMemoriesTool(config, ctx) {
 
 // --- Tool: recall_read_vault ---
 function createRecallReadVaultTool(config, ctx) {
-  const agent = parentAgentKey(ctx);
   return {
     name: "recall_read_vault",
     label: "Read Vault Note",
@@ -165,9 +194,11 @@ function createRecallReadVaultTool(config, ctx) {
           description:
             "Path to the vault note, relative to the agent vault root (e.g., 'decisions/my-decision-42.md').",
         },
+        agent_key: agentKeyProperty(),
       },
     },
     async execute(_id, params) {
+      const agent = scopedAgentKey(ctx, params);
       const notePath = String(params.note_path || "").trim();
       if (!notePath) throw new Error("note_path is required");
       const qs = `agent=${agent}&note_path=${encodeURIComponent(notePath)}`;
@@ -182,7 +213,6 @@ function createRecallReadVaultTool(config, ctx) {
 
 // --- Tool: recall_scan_sessions ---
 function createRecallScanSessionsTool(config, ctx) {
-  const agent = parentAgentKey(ctx);
   return {
     name: "recall_scan_sessions",
     label: "Scan Session History",
@@ -196,9 +226,11 @@ function createRecallScanSessionsTool(config, ctx) {
           type: "number",
           description: "Number of recent messages to retrieve (default 20, max 80).",
         },
+        agent_key: agentKeyProperty(),
       },
     },
     async execute(_id, params) {
+      const agent = scopedAgentKey(ctx, params);
       const window =
         typeof params.window === "number" && params.window > 0
           ? Math.min(Math.floor(params.window), 80)
@@ -222,7 +254,6 @@ function createRecallScanSessionsTool(config, ctx) {
 
 // --- Tool: recall_search_graph ---
 function createRecallSearchGraphTool(config, ctx) {
-  const agent = parentAgentKey(ctx);
   return {
     name: "recall_search_graph",
     label: "Search Graph Notes",
@@ -236,6 +267,7 @@ function createRecallSearchGraphTool(config, ctx) {
           type: "string",
           description: "Natural language search query for graph notes.",
         },
+        agent_key: agentKeyProperty(),
         limit: {
           type: "number",
           description: "Maximum results to return (default 5).",
@@ -243,6 +275,7 @@ function createRecallSearchGraphTool(config, ctx) {
       },
     },
     async execute(_id, params) {
+      const agent = scopedAgentKey(ctx, params);
       const query = typeof params.query === "string" ? params.query.trim() : "";
       const limit =
         typeof params.limit === "number" && params.limit > 0 ? Math.floor(params.limit) : 5;

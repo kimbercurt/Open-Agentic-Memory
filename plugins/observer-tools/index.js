@@ -1,13 +1,6 @@
-const DEFAULT_BASE_URL = "http://127.0.0.1:4195";
+const DEFAULT_BASE_URL = "http://127.0.0.1:8400";
 const DEFAULT_TIMEOUT_MS = 12000;
-const DEFAULT_ALLOWED_AGENTS = [
-  
-  
-  
-  
-  
-  
-];
+const DEFAULT_ALLOWED_AGENTS = [];
 
 function resolveConfig(api) {
   const pluginConfig = api && typeof api.pluginConfig === "object" ? api.pluginConfig : {};
@@ -32,9 +25,8 @@ function isAllowedAgent(ctx, config) {
 
 function parentAgentKey(ctx) {
   const agentId = String((ctx && ctx.agentId) || "").trim();
-  // Extract brain key from agent ID prefix
-  const parts = agentId.split("-observer-"); return parts.length > 1 ? parts[0] : "assistant";
-  
+  const parts = agentId.split("-observer-");
+  return parts.length > 1 ? parts[0] : "assistant";
 }
 
 function observerRole(ctx) {

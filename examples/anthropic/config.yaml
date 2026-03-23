@@ -1,4 +1,5 @@
 # Open Agentic Memory — Anthropic Configuration
+# Note: this example uses Anthropic for chat/reasoning and OpenAI for embeddings.
 models:
   primary:
     provider: "anthropic"

@@ -348,22 +348,7 @@ def _resolve_configured_api_key(explicit_key: str, api_key_env: str, provider: s
     return "", ""
 
 
-def _resolve_gateway_config(app_config: Optional[Config] = None) -> Optional[Dict[str, str]]:
-    if app_config is not None and getattr(app_config, "gateway", None) is not None:
-        gateway_cfg = app_config.gateway
-        if not bool(getattr(gateway_cfg, "enabled", False)):
-            return None
-        base_url = str(gateway_cfg.base_url or "").strip().rstrip("/")
-        port = int(getattr(gateway_cfg, "port", 0) or 0)
-        if not base_url and port > 0:
-            base_url = f"http://127.0.0.1:{port}"
-        token = str(gateway_cfg.token or "").strip()
-        token_env = str(gateway_cfg.token_env or "").strip()
-        if not token and token_env:
-            token = str(os.environ.get(token_env, "") or "").strip()
-        if base_url:
-            return {"base_url": base_url, "token": token}
-
+def _detect_openclaw_gateway() -> Optional[Dict[str, str]]:
     cfg = _load_openclaw_config_json()
     gateway = cfg.get("gateway", {}) if isinstance(cfg.get("gateway"), dict) else {}
     auth = gateway.get("auth", {}) if isinstance(gateway.get("auth"), dict) else {}
@@ -382,6 +367,28 @@ def _resolve_gateway_config(app_config: Optional[Config] = None) -> Optional[Dic
         "base_url": f"http://127.0.0.1:{port}",
         "token": token,
     }
+
+
+def _resolve_gateway_config(app_config: Optional[Config] = None) -> Optional[Dict[str, str]]:
+    detected_gateway = _detect_openclaw_gateway()
+    if app_config is not None and getattr(app_config, "gateway", None) is not None:
+        gateway_cfg = app_config.gateway
+        if not bool(getattr(gateway_cfg, "enabled", False)):
+            return None
+        base_url = str(gateway_cfg.base_url or "").strip().rstrip("/")
+        port = int(getattr(gateway_cfg, "port", 0) or 0)
+        if not base_url and port > 0:
+            base_url = f"http://127.0.0.1:{port}"
+        token = str(gateway_cfg.token or "").strip()
+        token_env = str(gateway_cfg.token_env or "").strip()
+        if not token and token_env:
+            token = str(os.environ.get(token_env, "") or "").strip()
+        if not token and detected_gateway is not None:
+            token = str(detected_gateway.get("token", "") or "").strip()
+        if base_url:
+            return {"base_url": base_url, "token": token}
+
+    return detected_gateway
 
 
 def _canonical_openclaw_model_ref(provider: str, model: str) -> str:
@@ -638,6 +645,7 @@ class OpenClawMemoryBridge:
             return {}
 
     def _gateway_settings(self) -> Tuple[Optional[str], Optional[str]]:
+        detected_gateway = _detect_openclaw_gateway()
         if getattr(self.config, "gateway", None) is not None:
             gateway_cfg = self.config.gateway
             if not bool(getattr(gateway_cfg, "enabled", False)):
@@ -647,21 +655,19 @@ class OpenClawMemoryBridge:
             token_env = str(getattr(gateway_cfg, "token_env", "") or "").strip()
             if not token and token_env:
                 token = str(os.environ.get(token_env, "") or "").strip()
+            if not token and detected_gateway is not None:
+                token = str(detected_gateway.get("token", "") or "").strip()
             if port:
                 return str(port), token or None
 
-        cfg = self._load_openclaw_config()
-        gateway = cfg.get("gateway", {}) if isinstance(cfg.get("gateway"), dict) else {}
-        auth = gateway.get("auth", {}) if isinstance(gateway.get("auth"), dict) else {}
-        port = gateway.get("port") or 18789
-        token = (
-            os.environ.get("OPENCLAW_GATEWAY_TOKEN")
-            or os.environ.get("OPENCLAW_GATEWAY_PASSWORD")
-            or auth.get("token")
-            or auth.get("password")
-            or ""
-        )
-        return str(port), str(token)
+        if detected_gateway is None:
+            return None, None
+
+        base_url = str(detected_gateway.get("base_url", "") or "")
+        match = re.search(r":(\d+)$", base_url)
+        port = match.group(1) if match else "18789"
+        token = str(detected_gateway.get("token", "") or "").strip()
+        return port, token or None
 
     def _agent_workspace(self, agent_id: str) -> Path:
         cfg = self._load_openclaw_config()

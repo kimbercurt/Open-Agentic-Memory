@@ -1,7 +1,8 @@
 # Open Agentic Memory — Configuration
 # Copy this to config.yaml and fill in your values.
+# Prefer .env or OpenClaw-managed auth for secrets; leave inline secret fields blank unless you explicitly want config-local auth.
 
-framework: "standalone"          # openclaw, standalone, langchain, manual
+framework: "standalone"          # openclaw, standalone, or labels for external/manual wiring
 
 # ============================================================
 # Models — plug in whatever you have
@@ -13,7 +14,7 @@ models:
     provider: "openai"           # openai, openai-codex, anthropic, ollama, openrouter, etc.
     model: "gpt-5.4"
     api_key_env: "OPENAI_API_KEY"  # environment variable name holding the key
-    api_key: ""                 # optional: raw key if you want config-local auth
+    api_key: ""                 # optional: inline key (not recommended; prefer api_key_env or OpenClaw auth)
     auth_method: "direct"       # direct, oauth-gateway
     # base_url: ""               # optional: override API endpoint
 
@@ -23,7 +24,7 @@ models:
     provider: "openai"
     model: "gpt-5.3-codex-spark"
     api_key_env: "OPENAI_API_KEY"
-    api_key: ""
+    api_key: ""                 # optional: inline key (not recommended; prefer api_key_env or OpenClaw auth)
     auth_method: "direct"
     thinking: "high"             # reasoning effort: low, medium, high, max
 
@@ -34,7 +35,7 @@ embedding:
   provider: "openai"             # openai, ollama, gemini, voyage, mistral, openclaw-builtin
   model: "text-embedding-3-small"
   api_key_env: "OPENAI_API_KEY"
-  api_key: ""
+  api_key: ""                   # optional: inline key (not recommended; prefer api_key_env or OpenClaw auth)
   # endpoint: ""                 # for ollama/local: http://localhost:11434/api/embed
   dimensions: 1536               # match your model's output dimensions
   note: ""                       # optional: setup writes extra context here for OpenClaw built-in mode
@@ -47,7 +48,7 @@ gateway:
   base_url: ""                   # e.g. http://127.0.0.1:18789
   port: 0
   token_env: "OPENCLAW_GATEWAY_TOKEN"
-  token: ""                      # optional: setup can write the detected gateway token here
+  token: ""                      # optional: inline token (not recommended; prefer token_env or detected OpenClaw auth)
   prefer_for_models: false       # legacy/global switch; per-model auth_method is preferred
   model_runner_agent_id: "oam-model-runner"
 
@@ -57,16 +58,13 @@ gateway:
 storage:
   # Vector store for semantic search
   vector:
-    backend: "qdrant"            # qdrant, pinecone, pgvector, faiss, chroma
-    path: "./data/vector"        # for local backends
-    # url: ""                    # for hosted backends
-    # api_key_env: ""
+    backend: "qdrant"            # current public release implementation
+    path: "./data/vector"
 
   # Structured store for metadata
   database:
-    backend: "sqlite"            # sqlite, postgres, mysql
-    path: "./data/memory.db"     # for sqlite
-    # connection_string: ""      # for postgres/mysql
+    backend: "sqlite"            # current public release implementation
+    path: "./data/memory.db"
 
   # Knowledge graph vault (markdown files)
   vault:

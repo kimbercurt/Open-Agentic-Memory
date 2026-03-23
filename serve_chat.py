@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import threading
+import textwrap
 import time
 import webbrowser
 from pathlib import Path
@@ -24,23 +25,40 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+MIN_PYTHON = (3, 9)
+
+
+def _dependency_error_message(missing: str) -> str:
+    return textwrap.dedent(
+        f"""
+        Open Agentic Memory requires Python 3.9+ and installed project dependencies.
+
+        Missing: {missing}
+
+        From the repo root, run:
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+        Then start the server with:
+          .venv/bin/python serve_chat.py
+        """
+    ).strip()
+
+
+if sys.version_info < MIN_PYTHON:
+    raise SystemExit(_dependency_error_message(f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+"))
+
 try:
     import yaml
-except ImportError:
-    print("Installing pyyaml...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pyyaml"])
-    import yaml
+except ImportError as exc:
+    raise SystemExit(_dependency_error_message("pyyaml")) from exc
 
 try:
     from fastapi import FastAPI, Request
     from fastapi.responses import HTMLResponse, JSONResponse
     import uvicorn
-except ImportError:
-    print("Installing fastapi and uvicorn...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn"])
-    from fastapi import FastAPI, Request
-    from fastapi.responses import HTMLResponse, JSONResponse
-    import uvicorn
+except ImportError as exc:
+    raise SystemExit(_dependency_error_message("fastapi / uvicorn")) from exc
 
 from agentic_memory.config import load_config as load_runtime_config, load_env_file
 from agentic_memory.runtime import MemoryRuntime, call_model_text

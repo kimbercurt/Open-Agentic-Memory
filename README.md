@@ -25,6 +25,19 @@ Observer:    Every 15min → 3 agents scan   Light:    Embedding search → 50ms
 
 Open `architecture.html` in a browser for the full animated interactive architecture diagram.
 
+## Prerequisites
+
+- Python 3.9 or newer
+- A fresh virtual environment created from the repo root
+- Dependencies installed with `pip install -r requirements.txt`
+
+Recommended setup:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
 ## Quick Start
 
 ### One-liner (interactive setup)
@@ -37,7 +50,7 @@ bash setup.sh
 
 The setup wizard walks you through:
 
-1. **Framework** — OpenClaw (recommended), Standalone Python, LangChain, or manual
+1. **Run mode** — OpenClaw (recommended), Standalone Python, or generated config for LangChain/manual wiring
 2. **Provider** — OpenAI, Anthropic, Ollama (local), OpenRouter, or custom
 3. **Primary Model** — your main chatbot LLM (shows provider-specific recommendations)
 4. **Fast Model** — for the 13 specialized agents (speed over depth)
@@ -45,7 +58,7 @@ The setup wizard walks you through:
 6. **API Keys** — auto-detects env vars and OpenClaw auth, and can save missing keys into `.env`
 7. **Chatbots** — choose how many isolated chatbots you want; final names are set in the browser setup chat
 
-It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. On the OpenClaw path it also configures `memorySearch`, records the local gateway settings for memory/tool integration, and resolves provider auth from OpenClaw when available; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
+It generates `config.yaml`, creates all vault directories, installs the Python environment, initializes the memory runtime, and can immediately launch the identity setup chat on the same server the agents use. Entered keys are saved to `.env`, while detected OpenClaw auth stays in local OpenClaw state instead of being copied into `config.yaml`. On the OpenClaw path it also configures `memorySearch`, records the local gateway settings for memory/tool integration, and resolves provider auth from OpenClaw when available; per-brain recall/observer agents are registered automatically as each chatbot identity is saved in the browser.
 
 ### Manual Setup
 
@@ -53,7 +66,7 @@ It generates `config.yaml`, creates all vault directories, installs the Python e
 git clone https://github.com/kimbercurt/Open-Agentic-Memory.git
 cd Open-Agentic-Memory
 cp config.example.yaml config.yaml
-# Edit config.yaml and/or add keys to .env
+# Edit config.yaml and set keys via .env or shell env vars
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python serve_chat.py --init-only
@@ -70,6 +83,14 @@ bash setup.sh
 ```
 
 The setup runs locally. If you choose remote providers like Anthropic, OpenAI, Gemini, or OpenRouter, those model calls still need network access at runtime.
+
+### Tests
+
+Run the basic local regression suite with:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
 
 ## The 15 Agents
 
@@ -106,14 +127,15 @@ When the user asks "what do you remember about X" (or the gate classifies "deep"
 ### Mode 4: Context Recall
 Between every turn, two scout agents pre-fetch and score memories in the background. The next turn gets pre-staged context at 0ms. A memory gate classifies every inbound message to route it correctly.
 
-## Model Agnostic
+## Architecture Portability
 
-This architecture works with **any models**. You need two tiers:
+The architecture is model-agnostic, but this repository is a reference implementation with a specific set of adapters.
 
-- **Primary model**: Any capable LLM for the main chatbot (Claude, GPT, Gemini, Llama, Mistral, etc.)
-- **Fast model**: Any cheap, quick model with tool support for the 13 specialized agents (Haiku, GPT-5.3-Codex-Spark, Gemini Flash, Llama 4 Scout, etc.)
+- **Primary model**: choose from the providers exposed in `setup.sh` and `config.example.yaml`
+- **Fast model**: same idea, with a cheaper/faster model for the 13 specialized agents
+- **Embeddings**: choose from the embedding providers surfaced in the current config and setup flow
 
-The embedding layer can use any embedding model. The vector store can be anything that does cosine similarity. The architecture is the idea — swap in whatever you have.
+If you want to use other providers or storage backends, this repo is the reference architecture to extend rather than a universal drop-in for every backend today.
 
 ## Multi-Brain Isolation
 
@@ -131,11 +153,13 @@ You can add as many brains as you need. Each is a self-contained unit.
 
 | Layer | What | How |
 |-------|------|-----|
-| **Vector Index** | Semantic search over memories | Qdrant, Pinecone, pgvector, FAISS, Chroma |
-| **Structured DB** | Memory metadata, sessions, events | SQLite, Postgres, MySQL |
+| **Vector Index** | Semantic search over memories | Qdrant (current implementation) |
+| **Structured DB** | Memory metadata, sessions, events | SQLite (current implementation) |
 | **Knowledge Vault** | Markdown notes with frontmatter | Obsidian-compatible file structure |
 | **Graph Links** | Relationships between notes | Link table for traversal |
 | **Staged Buffer** | Pre-fetched context for next turn | In-memory, per-session |
+
+Other vector/database backends are possible in principle, but they are not implemented in this public release yet.
 
 ## Key Design Principles
 
@@ -169,6 +193,9 @@ open-agentic-memory/
 │   ├── recall/                  # Facts, Context, Temporal
 │   ├── observer/                # Facts, Patterns, Relationships
 │   └── scout/                   # Gate, Trajectory, Relevance
+├── plugins/                     # OpenClaw recall/observer tool plugins
+│   ├── recall-tools/
+│   └── observer-tools/
 ├── src/agentic_memory/          # Python implementation
 │   ├── __init__.py
 │   ├── config.py                # Configuration loader
